@@ -1,354 +1,87 @@
-<img src="https://mctx.ai/brand/logo-purple.png" alt="mctx" width="120">
+# Bible MCP Server
 
-**Free MCP Hosting. Set Your Price. Get Paid.**
+Give your AI assistant the ability to study the Bible — search by meaning, look up original Hebrew and Greek words, compare translations side by side, trace cross-references, and explore topics across the entire canon.
 
-# Example MCP Server
-
-A complete reference implementation built with [`@mctx-ai/mcp-server`](https://github.com/mctx-ai/mcp-server). Every framework capability in one file — clone it, study it, make it yours.
+This server is available at [bible.mctx.ai](https://bible.mctx.ai). Connect it to any MCP-compatible AI client to unlock deep Bible study capabilities.
 
 ---
 
-## What This Server Does
+## What It Does
 
-Demonstrates all four MCP capability types in a single, well-commented file (`src/index.ts`):
+The Bible MCP Server provides verified scripture text from five public domain English translations alongside a rich set of study tools. Every verse returned includes a structured citation with book, chapter, verse number, and translation — so your AI assistant can cite its sources precisely.
 
-| Capability | What's Covered |
+**Data sources:**
+- 5 complete English translations (31,102 verses each)
+- Strong's Hebrew and Greek concordance
+- 340,000+ cross-references
+- Morphological analysis for original language study
+- Nave's Topical Bible
+
+---
+
+## Supported Translations
+
+| Abbreviation | Full Name |
 |---|---|
-| **Tools** | Sync string return, object return, generator with progress, LLM sampling |
-| **Resources** | Static URI, dynamic URI template with parameter extraction |
-| **Prompts** | Single-message string, multi-message `conversation()` |
-| **Infrastructure** | Structured logging, environment variables, error handling — [configurable from the mctx.ai dashboard](https://mctx.ai) when deployed |
+| KJV | King James Version |
+| WEB | World English Bible |
+| ASV | American Standard Version |
+| YLT | Young's Literal Translation |
+| DBY | Darby Translation |
 
 ---
 
 ## Tools
 
-### `greet`
+### search_bible
+Searches the Bible by meaning using semantic similarity. Ask a question or describe a concept in natural language and receive ranked passages that match the intent — not just the keywords. Filter by translation, book, or testament.
 
-Greets a person by name. Uses the `GREETING` environment variable (default: `"Hello"`).
+### find_text
+Searches for an exact keyword or phrase across all translations or a specific one. When no translation filter is provided, results include matches from all five supported translations. Results are ordered canonically from Genesis to Revelation.
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `name` | string | yes | Name to greet (1–100 characters) |
+### compare_translations
+Returns the same verse or passage in all five translations side by side, making textual differences and translation choices immediately visible.
 
-```
-greet(name: "Alice")
-→ "Hello, Alice!"
-```
+### cross_references
+Finds related passages for a given verse — other parts of scripture that illuminate, echo, or expand on the same idea.
 
-Set `GREETING=Howdy` to get `"Howdy, Alice!"` instead.
+### word_study
+Performs an original language analysis for a specific word in a verse. Returns the Hebrew or Greek word, its Strong's number, transliteration, definition, BDB or Thayer lexicon entry, morphological parsing, and other verses where the same word appears.
 
-> In production, configure environment variables from the [mctx.ai dashboard](https://mctx.ai) — changes trigger a seamless automatic redeploy.
+### concordance
+Finds every verse where a given Hebrew or Greek word (identified by Strong's number) occurs across the entire Bible.
 
----
-
-### `calculate`
-
-Performs basic arithmetic and returns a structured result object.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `operation` | string | yes | One of: `add`, `subtract`, `multiply`, `divide` |
-| `a` | number | yes | First operand |
-| `b` | number | yes | Second operand |
-
-```
-calculate(operation: "multiply", a: 6, b: 7)
-→ { "operation": "multiply", "a": 6, "b": 7, "result": 42 }
-```
-
-Throws a descriptive error on division by zero.
-
----
-
-### `analyze`
-
-Analyzes a topic and streams progress notifications as it works through three phases.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `topic` | string | yes | Topic to analyze (3–200 characters) |
-
-```
-analyze(topic: "quantum computing")
-→ [progress: 1/3] → [progress: 2/3] → [progress: 3/3]
-→ "Analysis of "quantum computing" complete. Found 42 insights across 7 categories."
-```
-
-Demonstrates `GeneratorToolHandler` with `createProgress()`.
-
----
-
-### `smart-answer`
-
-Answers questions by delegating to the client's LLM via the sampling API. Falls back gracefully when sampling is unavailable (HTTP transport).
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `question` | string | yes | Question to answer (minimum 5 characters) |
-
-```
-smart-answer(question: "What is the capital of France?")
-→ "Question: What is the capital of France?\n\nAnswer: Paris."
-```
-
-Demonstrates the `ask` parameter and bidirectional transport pattern.
-
-This pattern — letting the MCP client supply the LLM — means your server stays stateless and cheap to host. The client brings the model; mctx brings the infrastructure.
+### topical_search
+Discovers verses organized around a topic using Nave's Topical Bible — a curated index of thousands of biblical subjects, persons, and themes.
 
 ---
 
 ## Resources
 
-### `docs://readme`
+Resources let AI clients read structured data directly from the server.
 
-Static resource. Returns plain-text server documentation.
-
-```
-Read URI: docs://readme
-→ "Welcome to the example MCP server built with @mctx-ai/mcp-server..."
-```
-
----
-
-### `user://{userId}`
-
-Dynamic resource. Returns a JSON user profile for the given ID.
-
-```
-Read URI: user://42
-→ { "id": "42", "name": "User 42", "joined": "2024-01-01", "plan": "pro" }
-```
-
-Demonstrates URI templates with automatic parameter extraction.
+| URI | Description |
+|---|---|
+| `bible://translations` | Lists all available translations with their full names and abbreviations |
+| `bible://{translation}/{book}/{chapter}` | Returns a full chapter of scripture |
+| `bible://{translation}/{book}/{chapter}/{verse}` | Returns a specific verse with surrounding context |
 
 ---
 
-## Prompts
+## Example Use Cases
 
-### `code-review`
+**Comparative Bible study** — Ask the AI to show how different translations render a verse and explain meaningful differences in word choice.
 
-Generates a code review request as a single user message.
+**Word studies in original languages** — Look up a word like "love" in John 3:16 and trace whether the Greek is *agape*, *phileo*, or something else — then find every other verse where that same Greek word appears.
 
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `code` | string | yes | Code to review |
-| `language` | string | no | Programming language label |
+**Topical research** — Find what the Bible says about patience, justice, or prayer using Nave's organized topic index.
 
-```
-code-review(code: "const x = eval(input)", language: "javascript")
-→ "Please review this javascript for bugs, security issues, and improvements:..."
-```
+**Sermon and teaching preparation** — Gather cross-references, compare translations, and study original language nuances for a passage — all in one conversation.
+
+**Theological investigation** — Search by concept rather than keyword to surface passages that speak to a theme even when the exact word is absent.
 
 ---
 
-### `debug`
+## How to Connect
 
-Builds a structured multi-turn conversation to guide debugging.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `error` | string | yes | Error message or description |
-| `context` | string | no | Stack trace or additional logs (max 5,000 characters) |
-
-```
-debug(error: "TypeError: Cannot read properties of undefined")
-→ [user] "I'm seeing this error: TypeError: Cannot read..."
-→ [assistant] "I will analyze the error and provide step-by-step debugging guidance."
-```
-
-Demonstrates `conversation()` for multi-role dialogue.
-
----
-
-## Architecture
-
-### High-Level Structure
-
-```
-src/index.ts        → Server implementation (all features in one file)
-  ├─ Tools          → Functions LLM clients can invoke
-  ├─ Resources      → Data exposed via URIs
-  ├─ Prompts        → Reusable message templates
-  └─ Export         → Fetch handler for JSON-RPC 2.0 over HTTP
-
-src/index.test.ts   → Comprehensive tests for all capabilities
-dist/index.js       → Bundled output (generated by esbuild)
-```
-
-### Framework Pattern
-
-**Registration:** All capabilities (tools, resources, prompts) follow a decorator pattern:
-1. Define handler function with specific signature
-2. Attach metadata (`.description`, `.input`, `.mimeType`)
-3. Register with server via `server.tool()`, `server.resource()`, or `server.prompt()`
-
-**Handler signatures:**
-- **ToolHandler:** `(args, ask?) => string | object | Promise<string | object>`
-- **GeneratorToolHandler:** `function* (args) { yield progress; return result; }`
-- **ResourceHandler:** `(params) => string`
-- **PromptHandler:** `(args) => string | conversation(...)`
-
-**Schema system:** The `T` namespace provides type-safe schema builders (`.string()`, `.number()`, `.boolean()`, etc.) with validation constraints.
-
-### Entry Point
-
-`createServer()` initializes an MCP server instance. The returned `server.fetch` property is a Web Standard Fetch API handler compatible with:
-- Cloudflare Workers
-- Deno Deploy
-- Node.js with adapters
-- mctx hosting platform
-
-The handler processes JSON-RPC 2.0 requests over HTTP.
-
----
-
-## Use This Template
-
-This repo is a GitHub template. Click **Use this template** on GitHub, then:
-
-**1. Clone your new repo**
-
-```bash
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
-```
-
-**2. Run the setup script**
-
-```bash
-./setup.sh
-```
-
-`setup.sh` runs once and prompts you for a project name and description, asks whether to keep the example code or start from a minimal skeleton, updates `package.json`, rewrites `README.md` with a clean starting point, installs dependencies, creates an initial git commit, and deletes itself.
-
-**3. Start developing**
-
-```bash
-npm run dev
-```
-
-If you kept the examples, `src/index.ts` is unchanged — study the patterns and modify from there. If you started empty, you get a minimal skeleton with a single `hello` tool to build from.
-
----
-
-## Development Commands
-
-### Build
-
-```bash
-npm run build
-```
-
-Bundles `src/index.ts` to `dist/index.js` using esbuild (minified ESM output).
-
-### Dev Server
-
-```bash
-npm run dev
-```
-
-Runs parallel watch mode:
-- `dev:build` — esbuild watch (rebuilds on source changes)
-- `dev:server` — mctx-dev hot-reloads server on rebuild
-
-**Test environment variables during dev:**
-
-```bash
-GREETING="Howdy" npm run dev
-```
-
-### Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm test -- --watch
-
-# Run specific test file
-npm test src/index.test.ts
-
-# Run tests matching pattern
-npm test -- -t "greet"
-```
-
-### Linting
-
-```bash
-# Check for issues
-npm run lint
-```
-
-### Formatting
-
-```bash
-# Format all files
-npm run format
-
-# Check formatting without modifying
-npm run format:check
-```
-
----
-
-## Environment Variables
-
-**`GREETING`** — Customizes the greeting message in the `greet` tool.
-- **Default:** `"Hello"`
-- **Example:** `GREETING="Howdy"` produces `"Howdy, Alice!"`
-
-Set environment variables in the [mctx.ai dashboard](https://mctx.ai) when deployed — changes trigger a seamless automatic redeploy.
-
----
-
-## Testing Patterns
-
-### JSON-RPC Helper Functions
-
-**`createRequest(method, params)`** — Creates a `Request` object with proper JSON-RPC 2.0 structure:
-
-```typescript
-{
-  jsonrpc: '2.0',
-  id: 1,
-  method: 'tools/call',
-  params: { name: 'greet', arguments: { name: 'Alice' } }
-}
-```
-
-**`getResponse(response)`** — Parses JSON-RPC response from `Response` object.
-
-### Test Structure
-
-Tests organized by capability type:
-- **Tools** — Invoke via `tools/call`, validate `result.content[0].text`
-- **Resources** — Read via `resources/read`, validate `result.contents[0].text` and `mimeType`
-- **Prompts** — Get via `prompts/get`, validate `result.messages[]` array structure
-- **Server Capabilities** — List via `tools/list`, `resources/list`, `prompts/list`
-
-Error handling tests verify `result.isError === true` and error message content.
-
----
-
-## Prompt Ideas
-
-Use these with any MCP client connected to this server:
-
-- **"Greet the whole team"** — Call `greet` in a loop with each team member's name
-- **"Check my math"** — Use `calculate` to verify arithmetic in a document or spreadsheet
-- **"Deep-dive on a topic"** — Call `analyze` and watch real-time progress stream in
-- **"Ask anything"** — Use `smart-answer` to route questions through the client's LLM
-- **"Review my PR diff"** — Pass a code snippet to `code-review` with the language set
-- **"Help me fix this stack trace"** — Feed an error and logs into `debug` for guided triage
-- **"Look up a user"** — Read `user://{id}` to fetch a profile by ID
-
----
-
-## Learn More
-
-- [`@mctx-ai/mcp-server`](https://github.com/mctx-ai/mcp-server) — Framework documentation and API reference
-- [docs.mctx.ai](https://docs.mctx.ai) — Platform guides for deploying and managing MCP servers
-- [mctx.ai](https://mctx.ai) — Host your MCP server for free
-- [MCP Specification](https://modelcontextprotocol.io) — The protocol spec this server implements
+Visit [mctx.ai](https://mctx.ai) to subscribe to this server and get connection instructions for your MCP client.

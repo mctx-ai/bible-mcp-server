@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import server, { smartAnswer } from './index.js';
+import server from './index.js';
 
 // Helper to create JSON-RPC 2.0 request
 function createRequest(method: string, params: Record<string, unknown> = {}) {
@@ -21,390 +21,198 @@ async function getResponse(response: Response) {
   return data;
 }
 
-// ─── Tools Tests ────────────────────────────────────────────────────
-
-describe('Tool: greet', () => {
-  test('should greet a person by name with default greeting', async () => {
-    const req = createRequest('tools/call', {
-      name: 'greet',
-      arguments: { name: 'Alice' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toBe('Hello, Alice!');
-  });
-
-  test('should handle different names', async () => {
-    const req = createRequest('tools/call', {
-      name: 'greet',
-      arguments: { name: 'Bob' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toBe('Hello, Bob!');
-  });
-
-  test('should trim whitespace from name', async () => {
-    const req = createRequest('tools/call', {
-      name: 'greet',
-      arguments: { name: '  Alice  ' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toBe('Hello, Alice!');
-  });
-
-  test('should use GREETING environment variable when set', async () => {
-    const originalGreeting = process.env.GREETING;
-    process.env.GREETING = 'Howdy';
-
-    const req = createRequest('tools/call', {
-      name: 'greet',
-      arguments: { name: 'Charlie' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toBe('Howdy, Charlie!');
-
-    // Restore original value
-    if (originalGreeting === undefined) {
-      delete process.env.GREETING;
-    } else {
-      process.env.GREETING = originalGreeting;
-    }
-  });
-});
-
-describe('Tool: calculate', () => {
-  test('should add two numbers', async () => {
-    const req = createRequest('tools/call', {
-      name: 'calculate',
-      arguments: { operation: 'add', a: 5, b: 3 },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const result = JSON.parse(data.result.content[0].text);
-    expect(result).toEqual({ operation: 'add', a: 5, b: 3, result: 8 });
-  });
-
-  test('should subtract two numbers', async () => {
-    const req = createRequest('tools/call', {
-      name: 'calculate',
-      arguments: { operation: 'subtract', a: 10, b: 4 },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const result = JSON.parse(data.result.content[0].text);
-    expect(result).toEqual({ operation: 'subtract', a: 10, b: 4, result: 6 });
-  });
-
-  test('should multiply two numbers', async () => {
-    const req = createRequest('tools/call', {
-      name: 'calculate',
-      arguments: { operation: 'multiply', a: 6, b: 7 },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const result = JSON.parse(data.result.content[0].text);
-    expect(result).toEqual({
-      operation: 'multiply',
-      a: 6,
-      b: 7,
-      result: 42,
-    });
-  });
-
-  test('should divide two numbers', async () => {
-    const req = createRequest('tools/call', {
-      name: 'calculate',
-      arguments: { operation: 'divide', a: 20, b: 4 },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const result = JSON.parse(data.result.content[0].text);
-    expect(result).toEqual({ operation: 'divide', a: 20, b: 4, result: 5 });
-  });
-
-  test('should handle division by zero', async () => {
-    const req = createRequest('tools/call', {
-      name: 'calculate',
-      arguments: { operation: 'divide', a: 10, b: 0 },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.isError).toBe(true);
-    expect(data.result.content[0].text).toContain('by zero');
-  });
-});
-
-describe('Tool: analyze', () => {
-  test('should complete analysis with progress tracking', async () => {
-    const req = createRequest('tools/call', {
-      name: 'analyze',
-      arguments: { topic: 'AI trends' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toContain('AI trends');
-    expect(data.result.content[0].text).toContain('complete');
-    expect(data.result.content[0].text).toContain('42 insights');
-  });
-
-  test('should analyze different topics', async () => {
-    const req = createRequest('tools/call', {
-      name: 'analyze',
-      arguments: { topic: 'Cloud computing' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toContain('Cloud computing');
-  });
-});
-
-describe('Tool: smart-answer', () => {
-  // In HTTP/stateless transport the framework passes ask=null to handlers,
-  // so these tests exercise the fallback path. The sampling path (ask != null)
-  // is exercised in streaming transports (WebSocket/SSE) at runtime.
-  test('should include the question in the response', async () => {
-    const req = createRequest('tools/call', {
-      name: 'smart-answer',
-      arguments: { question: 'What is TypeScript?' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.content[0].text).toContain('What is TypeScript?');
-  });
-
-  test('should include both Question and Answer sections in the response', async () => {
-    const req = createRequest('tools/call', {
-      name: 'smart-answer',
-      arguments: { question: 'How does MCP work?' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const text: string = data.result.content[0].text;
-    expect(text).toContain('Question:');
-    expect(text).toContain('Answer:');
-    expect(text).toContain('How does MCP work?');
-  });
-
-  test('should explain that LLM sampling requires a streaming transport', async () => {
-    const req = createRequest('tools/call', {
-      name: 'smart-answer',
-      arguments: { question: 'Why is the sky blue?' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    // Fallback response should tell the caller how to get full sampling support
-    expect(data.result.content[0].text).toContain('streaming transport');
-  });
-
-  test('should not return an error for a valid question', async () => {
-    const req = createRequest('tools/call', {
-      name: 'smart-answer',
-      arguments: { question: 'What is the capital of France?' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.isError).toBeFalsy();
-  });
-
-  // The ask-available path cannot go through server.fetch() (HTTP transport always
-  // passes ask=null). These tests invoke the exported handler directly with a mock
-  // ask function to cover that code path.
-
-  test('should return LLM response content when ask is available and succeeds', async () => {
-    const mockAsk = async () => 'Paris is the capital of France.';
-    const result = await smartAnswer({ question: 'What is the capital of France?' }, mockAsk);
-
-    expect(result).toContain('What is the capital of France?');
-    expect(result).toContain('Paris is the capital of France.');
-    expect(result).toContain('Question:');
-    expect(result).toContain('Answer:');
-  });
-
-  test('should propagate error when ask throws', async () => {
-    const mockAsk = async () => {
-      throw new Error('Sampling failed: model unavailable');
-    };
-
-    await expect(
-      smartAnswer({ question: 'What is TypeScript?' }, mockAsk),
-    ).rejects.toThrow('Sampling failed: model unavailable');
-  });
-});
-
-// ─── Resources Tests ────────────────────────────────────────────────
-
-describe('Resource: docs://readme', () => {
-  test('should return static readme content', async () => {
-    const req = createRequest('resources/read', {
-      uri: 'docs://readme',
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.contents[0].text).toContain('Welcome to the example MCP server');
-    expect(data.result.contents[0].text).toContain('@mctx-ai/mcp-server');
-    expect(data.result.contents[0].mimeType).toBe('text/plain');
-  });
-});
-
-describe('Resource: user://{userId}', () => {
-  test('should return user profile for userId 123', async () => {
-    const req = createRequest('resources/read', {
-      uri: 'user://123',
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const profile = JSON.parse(data.result.contents[0].text);
-    expect(profile).toEqual({
-      id: '123',
-      name: 'User 123',
-      joined: '2024-01-01',
-      plan: 'pro',
-    });
-    expect(data.result.contents[0].mimeType).toBe('application/json');
-  });
-
-  test('should return user profile for userId 456', async () => {
-    const req = createRequest('resources/read', {
-      uri: 'user://456',
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    const profile = JSON.parse(data.result.contents[0].text);
-    expect(profile).toEqual({
-      id: '456',
-      name: 'User 456',
-      joined: '2024-01-01',
-      plan: 'pro',
-    });
-  });
-});
-
-// ─── Prompts Tests ──────────────────────────────────────────────────
-
-describe('Prompt: code-review', () => {
-  test('should generate code review prompt', async () => {
-    const code = 'function add(a, b) { return a + b; }';
-    const req = createRequest('prompts/get', {
-      name: 'code-review',
-      arguments: { code, language: 'javascript' },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.messages).toHaveLength(1);
-    expect(data.result.messages[0].role).toBe('user');
-    expect(data.result.messages[0].content.text).toContain('review');
-    expect(data.result.messages[0].content.text).toContain(code);
-    expect(data.result.messages[0].content.text).toContain('javascript');
-  });
-
-  test('should handle code without language specified', async () => {
-    const code = 'print("Hello")';
-    const req = createRequest('prompts/get', {
-      name: 'code-review',
-      arguments: { code },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.messages[0].content.text).toContain(code);
-    expect(data.result.messages[0].content.text).toContain('code');
-  });
-});
-
-describe('Prompt: debug', () => {
-  test('should generate debug prompt with error only', async () => {
-    const error = 'TypeError: Cannot read property of undefined';
-    const req = createRequest('prompts/get', {
-      name: 'debug',
-      arguments: { error },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.messages).toHaveLength(2);
-    expect(data.result.messages[0].role).toBe('user');
-    expect(data.result.messages[0].content.text).toContain(error);
-    expect(data.result.messages[1].role).toBe('assistant');
-    expect(data.result.messages[1].content.text).toContain('debugging');
-  });
-
-  test('should generate debug prompt with error and context', async () => {
-    const error = 'ReferenceError: x is not defined';
-    const context = 'Function call stack: main() -> processData()';
-    const req = createRequest('prompts/get', {
-      name: 'debug',
-      arguments: { error, context },
-    });
-    const res = await server.fetch(req);
-    const data = await getResponse(res);
-
-    expect(data.result.messages).toHaveLength(3);
-    expect(data.result.messages[0].content.text).toContain(error);
-    expect(data.result.messages[1].content.text).toContain(context);
-    expect(data.result.messages[2].role).toBe('assistant');
-  });
-});
-
-// ─── Server Capabilities Tests ─────────────────────────────────────
+// ─── Server Capabilities Tests ────────────────────────────────────────────────
 
 describe('Server capabilities', () => {
-  test('should list all available tools', async () => {
+  test('tools/list returns all 7 tools', async () => {
     const req = createRequest('tools/list');
     const res = await server.fetch(req);
     const data = await getResponse(res);
 
     const toolNames = data.result.tools.map((t: { name: string }) => t.name);
-    expect(toolNames).toContain('greet');
-    expect(toolNames).toContain('calculate');
-    expect(toolNames).toContain('analyze');
-    expect(toolNames).toContain('smart-answer');
+    expect(toolNames).toContain('search_bible');
+    expect(toolNames).toContain('find_text');
+    expect(toolNames).toContain('compare_translations');
+    expect(toolNames).toContain('cross_references');
+    expect(toolNames).toContain('word_study');
+    expect(toolNames).toContain('concordance');
+    expect(toolNames).toContain('topical_search');
+    expect(toolNames).toHaveLength(7);
   });
 
-  test('should list all available resources', async () => {
-    const reqResources = createRequest('resources/list');
-    const resResources = await server.fetch(reqResources);
-    const dataResources = await getResponse(resResources);
+  test('resources/list and resources/templates/list return all 3 resources', async () => {
+    const staticReq = createRequest('resources/list');
+    const staticRes = await server.fetch(staticReq);
+    const staticData = await getResponse(staticRes);
 
-    const resourceUris = dataResources.result.resources.map((r: { uri: string }) => r.uri);
-    expect(resourceUris).toContain('docs://readme');
+    const staticUris = staticData.result.resources.map((r: { uri: string }) => r.uri);
+    expect(staticUris).toContain('bible://translations');
 
-    const reqTemplates = createRequest('resources/templates/list');
-    const resTemplates = await server.fetch(reqTemplates);
-    const dataTemplates = await getResponse(resTemplates);
+    const templateReq = createRequest('resources/templates/list');
+    const templateRes = await server.fetch(templateReq);
+    const templateData = await getResponse(templateRes);
 
-    const templateUris = dataTemplates.result.resourceTemplates.map((t: { uriTemplate: string }) => t.uriTemplate);
-    expect(templateUris).toContain('user://{userId}');
+    const templateUris = templateData.result.resourceTemplates.map(
+      (t: { uriTemplate: string }) => t.uriTemplate,
+    );
+    expect(templateUris).toContain('bible://{translation}/{book}/{chapter}');
+    expect(templateUris).toContain('bible://{translation}/{book}/{chapter}/{verse}');
   });
+});
 
-  test('should list all available prompts', async () => {
-    const req = createRequest('prompts/list');
+// ─── Tool Smoke Tests ─────────────────────────────────────────────────────────
+//
+// These tests verify each tool returns a response (not an unhandled error).
+// They do not assert on specific verse data — correctness is tested in D6.
+// All tools call D1/Vectorize/Workers AI; those APIs will fail in the test
+// environment, so we assert isError or a response object (not a crash).
+
+describe('Tool: search_bible', () => {
+  test('returns a response for a valid query', async () => {
+    const req = createRequest('tools/call', {
+      name: 'search_bible',
+      arguments: { query: 'love your neighbor' },
+    });
     const res = await server.fetch(req);
     const data = await getResponse(res);
 
-    const promptNames = data.result.prompts.map((p: { name: string }) => p.name);
-    expect(promptNames).toContain('code-review');
-    expect(promptNames).toContain('debug');
+    // Framework must return a result (even if it is an error from missing env vars)
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+describe('Tool: find_text', () => {
+  test('returns a response for a valid query', async () => {
+    const req = createRequest('tools/call', {
+      name: 'find_text',
+      arguments: { query: 'faith' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+describe('Tool: compare_translations', () => {
+  test('returns a response for a valid verse range', async () => {
+    const req = createRequest('tools/call', {
+      name: 'compare_translations',
+      arguments: { book: 'John', chapter: 3, verse_start: 16 },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+describe('Tool: cross_references', () => {
+  test('returns a response for a valid verse reference', async () => {
+    const req = createRequest('tools/call', {
+      name: 'cross_references',
+      arguments: { book: 'Romans', chapter: 8, verse: 28 },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+describe('Tool: word_study', () => {
+  test('returns a response for a valid verse and word', async () => {
+    const req = createRequest('tools/call', {
+      name: 'word_study',
+      arguments: { book: 'Genesis', chapter: 1, verse: 1, word: '1' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+describe('Tool: concordance', () => {
+  test('returns a response for a valid word', async () => {
+    const req = createRequest('tools/call', {
+      name: 'concordance',
+      arguments: { word: 'grace' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+describe('Tool: topical_search', () => {
+  test('returns a response for a valid topic', async () => {
+    const req = createRequest('tools/call', {
+      name: 'topical_search',
+      arguments: { topic: 'prayer' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.content).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+  });
+});
+
+// ─── Resource Smoke Tests ─────────────────────────────────────────────────────
+
+describe('Resource: bible://translations', () => {
+  test('returns a response', async () => {
+    const req = createRequest('resources/read', {
+      uri: 'bible://translations',
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.contents).toBeDefined();
+    expect(Array.isArray(data.result.contents)).toBe(true);
+  });
+});
+
+describe('Resource: bible://{translation}/{book}/{chapter}', () => {
+  test('returns a response for a valid URI', async () => {
+    const req = createRequest('resources/read', {
+      uri: 'bible://KJV/John/3',
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.contents).toBeDefined();
+    expect(Array.isArray(data.result.contents)).toBe(true);
+  });
+});
+
+describe('Resource: bible://{translation}/{book}/{chapter}/{verse}', () => {
+  test('returns a response for a valid URI', async () => {
+    const req = createRequest('resources/read', {
+      uri: 'bible://KJV/John/3/16',
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(data.result.contents).toBeDefined();
+    expect(Array.isArray(data.result.contents)).toBe(true);
   });
 });
