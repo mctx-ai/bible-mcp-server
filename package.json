@@ -1,7 +1,7 @@
 {
-  "name": "example-mcp-server",
+  "name": "bible-mcp-server",
   "version": "0.3.52",
-  "description": "A reference MCP server built with @mctx-ai/mcp-server, showcasing the full range of framework capabilities. Provides tools for personalized greetings, mathematical calculations, progress-tracked data analysis, and LLM-assisted Q&A via sampling. Exposes resources through both static URIs and dynamic URI templates, and includes prompt templates for code review and debugging assistance. Features structured logging and environment variable configuration throughout. Designed as a working example and starting point — explore the source at github.com/mctx-ai/example-mcp-server or use the @mctx-ai/mcp-server framework to build your own.",
+  "description": "The Bible MCP Server.",
   "homepage": "https://mctx.ai",
   "type": "module",
   "main": "dist/index.js",
