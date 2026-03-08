@@ -6,7 +6,6 @@
  *
  * Sources: STEPBible TBESH (Hebrew) and TBESG (Greek) lexicon files
  * Tables:  strongs, lexicon_entries
- * Batch size: 100 statements per D1 HTTP API call (decision #9)
  *
  * Usage:
  *   npx tsx scripts/etl-strongs.ts
@@ -24,11 +23,39 @@ import * as path from 'path';
 import { d1 } from '../src/lib/cloudflare.js';
 
 // ---------------------------------------------------------------------------
+// SQL building helpers (mirrors cloudflare.ts internals for direct use here)
+// ---------------------------------------------------------------------------
+
+const ROWS_PER_INSERT = 200;
+
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Builds a single multi-row INSERT SQL string from an array of row tuples.
+ * Groups rows into statements of up to ROWS_PER_INSERT rows each.
+ */
+function buildMultiRowInserts(prefix: string, rows: unknown[][]): string {
+  const lines: string[] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+    const chunk = rows.slice(start, start + ROWS_PER_INSERT);
+    const tuples = chunk
+      .map((row) => `(${row.map(sqlLiteral).join(', ')})`)
+      .join(', ');
+    lines.push(`${prefix} ${tuples};`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 const DATA_DIR = path.resolve(process.cwd(), 'data/stepbible');
-const BATCH_SIZE = 100;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -175,55 +202,31 @@ function parseFile(filePath: string, language: 'hebrew' | 'greek'): ParseResult 
 }
 
 // ---------------------------------------------------------------------------
-// Batching
-// ---------------------------------------------------------------------------
-
-async function batchInsert(
-  statements: Array<{ sql: string; params: unknown[] }>,
-  label: string,
-): Promise<void> {
-  let inserted = 0;
-
-  for (let offset = 0; offset < statements.length; offset += BATCH_SIZE) {
-    const batch = statements.slice(offset, offset + BATCH_SIZE);
-    await d1.batch(batch);
-    inserted += batch.length;
-
-    if (statements.length > BATCH_SIZE) {
-      const pct = Math.round((inserted / statements.length) * 100);
-      process.stdout.write(`\r  [${label}] ${inserted}/${statements.length} (${pct}%)`);
-    }
-  }
-
-  if (statements.length > BATCH_SIZE) {
-    process.stdout.write('\n');
-  }
-}
-
-// ---------------------------------------------------------------------------
 // ETL steps
 // ---------------------------------------------------------------------------
 
 async function loadStrongs(entries: StrongsEntry[]): Promise<void> {
   log(`Inserting ${entries.length} Strong's entries...`);
-
-  const statements = entries.map((e) => ({
-    sql: 'INSERT OR IGNORE INTO strongs (prefixed_number, original_word, transliteration, definition, language) VALUES (?, ?, ?, ?, ?)',
-    params: [e.prefixed_number, e.original_word, e.transliteration, e.definition, e.language],
-  }));
-
-  await batchInsert(statements, 'strongs');
+  const rows = entries.map((e) => [
+    e.prefixed_number, e.original_word, e.transliteration, e.definition, e.language,
+  ]);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO strongs (prefixed_number, original_word, transliteration, definition, language) VALUES',
+    rows,
+  );
+  await d1.batchFile(sql);
 }
 
 async function loadLexiconEntries(entries: LexiconEntry[]): Promise<void> {
   log(`Inserting ${entries.length} lexicon entries...`);
-
-  const statements = entries.map((e) => ({
-    sql: 'INSERT OR IGNORE INTO lexicon_entries (strongs_number, language, short_def, long_def) VALUES (?, ?, ?, ?)',
-    params: [e.strongs_number, e.language, e.short_def, e.long_def],
-  }));
-
-  await batchInsert(statements, 'lexicon_entries');
+  const rows = entries.map((e) => [
+    e.strongs_number, e.language, e.short_def, e.long_def,
+  ]);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO lexicon_entries (strongs_number, language, short_def, long_def) VALUES',
+    rows,
+  );
+  await d1.batchFile(sql);
 }
 
 // ---------------------------------------------------------------------------

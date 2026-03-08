@@ -39,11 +39,39 @@ import * as path from 'path';
 import { d1 } from '../src/lib/cloudflare.js';
 
 // ---------------------------------------------------------------------------
+// SQL building helpers (mirrors cloudflare.ts internals for direct use here)
+// ---------------------------------------------------------------------------
+
+const ROWS_PER_INSERT = 200;
+
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Builds a single multi-row INSERT SQL string from an array of row tuples.
+ * Groups rows into statements of up to ROWS_PER_INSERT rows each.
+ */
+function buildMultiRowInserts(prefix: string, rows: unknown[][]): string {
+  const lines: string[] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+    const chunk = rows.slice(start, start + ROWS_PER_INSERT);
+    const tuples = chunk
+      .map((row) => `(${row.map(sqlLiteral).join(', ')})`)
+      .join(', ');
+    lines.push(`${prefix} ${tuples};`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 const DATA_DIR = path.resolve(process.cwd(), 'data/stepbible');
-const BATCH_SIZE = 100;
 
 // Source text translation IDs (separate namespace from English translations 1–5)
 const TRANSLATION_ID_HEBREW = 6;
@@ -376,32 +404,6 @@ function parseFile(filePath: string, translationId: number): ParseFileResult {
 }
 
 // ---------------------------------------------------------------------------
-// Batching
-// ---------------------------------------------------------------------------
-
-async function batchInsert(
-  statements: Array<{ sql: string; params: unknown[] }>,
-  label: string,
-): Promise<void> {
-  let inserted = 0;
-
-  for (let offset = 0; offset < statements.length; offset += BATCH_SIZE) {
-    const batch = statements.slice(offset, offset + BATCH_SIZE);
-    await d1.batch(batch);
-    inserted += batch.length;
-
-    if (statements.length > BATCH_SIZE) {
-      const pct = Math.round((inserted / statements.length) * 100);
-      process.stdout.write(`\r  [${label}] ${inserted}/${statements.length} (${pct}%)`);
-    }
-  }
-
-  if (statements.length > BATCH_SIZE) {
-    process.stdout.write('\n');
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Ensure source text records exist in translations table
 //
 // The morphology table has a translation_id foreign-key-style column.
@@ -416,12 +418,12 @@ async function ensureSourceTextRecords(): Promise<void> {
     { id: TRANSLATION_ID_GREEK, abbreviation: 'TAGNT', name: 'Translators Amalgamated Greek NT', year: null },
   ];
 
-  const statements = records.map((r) => ({
-    sql: 'INSERT OR IGNORE INTO translations (id, abbreviation, name, year) VALUES (?, ?, ?, ?)',
-    params: [r.id, r.abbreviation, r.name, r.year],
-  }));
-
-  await batchInsert(statements, 'translations');
+  const rows = records.map((r) => [r.id, r.abbreviation, r.name, r.year]);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO translations (id, abbreviation, name, year) VALUES',
+    rows,
+  );
+  await d1.batchFile(sql);
 }
 
 // ---------------------------------------------------------------------------
@@ -429,27 +431,27 @@ async function ensureSourceTextRecords(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function loadMorphologyRows(
-  rows: MorphologyRow[],
-  label: string,
+  morphRows: MorphologyRow[],
+  _label: string,
 ): Promise<void> {
-  const statements = rows.map((r) => ({
-    sql: `INSERT OR IGNORE INTO morphology
-            (book_id, chapter, verse, word_position, strongs_number, raw_strongs, lemma, parsing, translation_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    params: [
-      r.book_id,
-      r.chapter,
-      r.verse,
-      r.word_position,
-      r.strongs_number,
-      r.raw_strongs,
-      r.lemma,
-      r.parsing,
-      r.translation_id,
-    ],
-  }));
-
-  await batchInsert(statements, label);
+  const rows = morphRows.map((r) => [
+    r.book_id,
+    r.chapter,
+    r.verse,
+    r.word_position,
+    r.strongs_number,
+    r.raw_strongs,
+    r.lemma,
+    r.parsing,
+    r.translation_id,
+  ]);
+  const sql = buildMultiRowInserts(
+    `INSERT OR IGNORE INTO morphology
+      (book_id, chapter, verse, word_position, strongs_number, raw_strongs, lemma, parsing, translation_id)
+    VALUES`,
+    rows,
+  );
+  await d1.batchFile(sql);
 }
 
 // ---------------------------------------------------------------------------

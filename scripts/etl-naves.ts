@@ -31,6 +31,35 @@ import * as path from 'path';
 import { d1 } from '../src/lib/cloudflare.js';
 
 // ---------------------------------------------------------------------------
+// SQL building helpers (mirrors cloudflare.ts internals for direct use here)
+// ---------------------------------------------------------------------------
+
+const ROWS_PER_INSERT = 200;
+
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Builds a single multi-row INSERT SQL string from an array of row tuples.
+ * Groups rows into statements of up to ROWS_PER_INSERT rows each.
+ */
+function buildMultiRowInserts(prefix: string, rows: unknown[][]): string {
+  const lines: string[] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+    const chunk = rows.slice(start, start + ROWS_PER_INSERT);
+    const tuples = chunk
+      .map((row) => `(${row.map(sqlLiteral).join(', ')})`)
+      .join(', ');
+    lines.push(`${prefix} ${tuples};`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
@@ -38,7 +67,6 @@ const DATA_FILE = path.resolve(
   process.cwd(),
   'data/nave/NavesTopicalDictionary.csv',
 );
-const BATCH_SIZE = 100;
 
 // ---------------------------------------------------------------------------
 // Book abbreviation mapping
@@ -450,34 +478,6 @@ function expandRef(bookId: number, part: ParsedPart): VerseRef[] {
 }
 
 // ---------------------------------------------------------------------------
-// Batching
-// ---------------------------------------------------------------------------
-
-async function batchInsert(
-  statements: Array<{ sql: string; params: unknown[] }>,
-  label: string,
-): Promise<void> {
-  let inserted = 0;
-
-  for (let offset = 0; offset < statements.length; offset += BATCH_SIZE) {
-    const batch = statements.slice(offset, offset + BATCH_SIZE);
-    await d1.batch(batch);
-    inserted += batch.length;
-
-    if (statements.length > BATCH_SIZE) {
-      const pct = Math.round((inserted / statements.length) * 100);
-      process.stdout.write(
-        `\r  [${label}] ${inserted}/${statements.length} (${pct}%)`,
-      );
-    }
-  }
-
-  if (statements.length > BATCH_SIZE) {
-    process.stdout.write('\n');
-  }
-}
-
-// ---------------------------------------------------------------------------
 // ETL steps
 // ---------------------------------------------------------------------------
 
@@ -499,21 +499,21 @@ async function loadTopics(rows: NaveRow[]): Promise<Map<string, number>> {
     }
   }
 
-  const statements: Array<{ sql: string; params: unknown[] }> = [];
   const topics: TopicRecord[] = [];
   let id = 1;
 
   for (const [normalized, original] of seen) {
     topics.push({ id, topicName: original, normalizedTopic: normalized });
-    statements.push({
-      sql: 'INSERT OR IGNORE INTO nave_topics (id, topic_name, normalized_topic) VALUES (?, ?, ?)',
-      params: [id, original, normalized],
-    });
     id++;
   }
 
-  await batchInsert(statements, 'nave_topics');
-  log(`  Inserted ${statements.length} topic records`);
+  const insertRows = topics.map((t) => [t.id, t.topicName, t.normalizedTopic]);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO nave_topics (id, topic_name, normalized_topic) VALUES',
+    insertRows,
+  );
+  await d1.batchFile(sql);
+  log(`  Inserted ${topics.length} topic records`);
 
   // Build subject → id map (using original subject from CSV)
   const subjectToId = new Map<string, number>();
@@ -533,7 +533,7 @@ async function loadTopicVerses(
 ): Promise<void> {
   log('Loading nave_topic_verses...');
 
-  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const insertRows: unknown[][] = [];
   let totalRefs = 0;
   let chapterOnlyCount = 0;
   let skippedNonExistent = 0;
@@ -594,17 +594,18 @@ async function loadTopicVerses(
         chapterOnlyCount++;
       }
 
-      statements.push({
-        sql: 'INSERT OR IGNORE INTO nave_topic_verses (topic_id, book_id, chapter, verse, note) VALUES (?, ?, ?, ?, ?)',
-        params: [topicId, ref.bookId, ref.chapter, ref.verse, note],
-      });
+      insertRows.push([topicId, ref.bookId, ref.chapter, ref.verse, note]);
     }
   }
 
-  await batchInsert(statements, 'nave_topic_verses');
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO nave_topic_verses (topic_id, book_id, chapter, verse, note) VALUES',
+    insertRows,
+  );
+  await d1.batchFile(sql);
 
   log(`  Total refs parsed:           ${totalRefs.toLocaleString()}`);
-  log(`  Verse associations inserted: ${statements.length.toLocaleString()}`);
+  log(`  Verse associations inserted: ${insertRows.length.toLocaleString()}`);
   log(`  Chapter-only refs mapped:    ${chapterOnlyCount.toLocaleString()}`);
   log(`  Skipped (not in verses):     ${skippedNonExistent.toLocaleString()}`);
   if (skippedUnknownBook > 0) {

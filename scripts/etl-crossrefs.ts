@@ -19,7 +19,7 @@
  *   5. Resolve book names to book_id for both from and to verses
  *   6. Validate that target verses exist in the verses table; skip dangling refs
  *   7. Insert into cross_references with INSERT OR IGNORE (idempotent)
- *   8. Batch inserts via D1 HTTP API (100 statements per batch)
+ *   8. Bulk insert via d1.batchFile (single wrangler call for all rows)
  *
  * Usage:
  *   npx tsx scripts/etl-crossrefs.ts
@@ -38,12 +38,40 @@ import * as zlib from 'zlib';
 import { d1 } from '../src/lib/cloudflare.js';
 
 // ---------------------------------------------------------------------------
+// SQL building helpers (mirrors cloudflare.ts internals for direct use here)
+// ---------------------------------------------------------------------------
+
+const ROWS_PER_INSERT = 200;
+
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Builds a single multi-row INSERT SQL string from an array of row tuples.
+ * Groups rows into statements of up to ROWS_PER_INSERT rows each.
+ */
+function buildMultiRowInserts(prefix: string, rows: unknown[][]): string {
+  const lines: string[] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+    const chunk = rows.slice(start, start + ROWS_PER_INSERT);
+    const tuples = chunk
+      .map((row) => `(${row.map(sqlLiteral).join(', ')})`)
+      .join(', ');
+    lines.push(`${prefix} ${tuples};`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 const DATA_DIR = path.resolve(process.cwd(), 'data/openbible');
 const ZIP_FILE = path.join(DATA_DIR, 'cross-references.zip');
-const BATCH_SIZE = 100;
 const SOURCE = 'openbible';
 
 // KJV translation_id in the translations table (loaded by etl-bible-text.ts)
@@ -395,31 +423,6 @@ interface EtlStats {
 }
 
 // ---------------------------------------------------------------------------
-// Batch insert
-// ---------------------------------------------------------------------------
-
-async function batchInsert(
-  statements: Array<{ sql: string; params: unknown[] }>,
-): Promise<void> {
-  for (let offset = 0; offset < statements.length; offset += BATCH_SIZE) {
-    const batch = statements.slice(offset, offset + BATCH_SIZE);
-    await d1.batch(batch);
-
-    if (statements.length > BATCH_SIZE) {
-      const inserted = offset + batch.length;
-      const pct = Math.round((inserted / statements.length) * 100);
-      process.stdout.write(
-        `\r  Inserting... ${inserted.toLocaleString()}/${statements.length.toLocaleString()} (${pct}%)`,
-      );
-    }
-  }
-
-  if (statements.length > BATCH_SIZE) {
-    process.stdout.write('\n');
-  }
-}
-
-// ---------------------------------------------------------------------------
 // OpenBible book abbreviation normalization
 // ---------------------------------------------------------------------------
 
@@ -585,13 +588,11 @@ async function main(): Promise<void> {
     insertedRows: 0,
   };
 
-  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const rows: unknown[][] = [];
 
-  const insertSql = `
-    INSERT OR IGNORE INTO cross_references
-      (from_book_id, from_chapter, from_verse, to_book_id, to_chapter, to_verse, source, confidence)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `.trim();
+  const insertPrefix = `INSERT OR IGNORE INTO cross_references
+    (from_book_id, from_chapter, from_verse, to_book_id, to_chapter, to_verse, source, confidence)
+  VALUES`;
 
   for (const raw of rawRefs) {
     // Parse "From Verse"
@@ -630,19 +631,16 @@ async function main(): Promise<void> {
         continue;
       }
 
-      statements.push({
-        sql: insertSql,
-        params: [
-          fromBookId,
-          fromRef.chapter,
-          fromRef.verse,
-          toBookId,
-          toRef.chapter,
-          toRef.verse,
-          SOURCE,
-          confidence,
-        ],
-      });
+      rows.push([
+        fromBookId,
+        fromRef.chapter,
+        fromRef.verse,
+        toBookId,
+        toRef.chapter,
+        toRef.verse,
+        SOURCE,
+        confidence,
+      ]);
 
       stats.insertedRows++;
     }
@@ -668,14 +666,14 @@ async function main(): Promise<void> {
   );
   log(`  Deleted ${deleteResult.meta.changes} existing rows`);
 
-  // Step 5: Insert in batches
-  if (statements.length === 0) {
+  // Step 5: Insert all rows in a single wrangler call
+  if (rows.length === 0) {
     log('\nNo rows to insert. Exiting.');
     return;
   }
 
-  log(`\nInserting ${statements.length.toLocaleString()} rows in batches of ${BATCH_SIZE}...`);
-  await batchInsert(statements);
+  log(`\nInserting ${rows.length.toLocaleString()} rows...`);
+  await d1.batchFile(buildMultiRowInserts(insertPrefix, rows));
 
   // Step 5: Verify final count
   log('Verifying final row count in cross_references...');
