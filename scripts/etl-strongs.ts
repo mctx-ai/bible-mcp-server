@@ -37,12 +37,12 @@ function sqlLiteral(value: unknown): string {
 
 /**
  * Builds a single multi-row INSERT SQL string from an array of row tuples.
- * Groups rows into statements of up to ROWS_PER_INSERT rows each.
+ * Groups rows into statements of up to rowsPerInsert rows each.
  */
-function buildMultiRowInserts(prefix: string, rows: unknown[][]): string {
+function buildMultiRowInserts(prefix: string, rows: unknown[][], rowsPerInsert = ROWS_PER_INSERT): string {
   const lines: string[] = [];
-  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
-    const chunk = rows.slice(start, start + ROWS_PER_INSERT);
+  for (let start = 0; start < rows.length; start += rowsPerInsert) {
+    const chunk = rows.slice(start, start + rowsPerInsert);
     const tuples = chunk
       .map((row) => `(${row.map(sqlLiteral).join(', ')})`)
       .join(', ');
@@ -225,6 +225,7 @@ async function loadLexiconEntries(entries: LexiconEntry[]): Promise<void> {
   const sql = buildMultiRowInserts(
     'INSERT OR IGNORE INTO lexicon_entries (strongs_number, language, short_def, long_def) VALUES',
     rows,
+    20,
   );
   await d1.batchFile(sql);
 }
