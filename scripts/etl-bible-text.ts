@@ -6,7 +6,6 @@
  *
  * Translations loaded: KJV, WEB, ASV, YLT, DBY (Darby)
  * Canonical versification: KJV (decision #6)
- * Batch size: 100 statements per D1 HTTP API call (decision #9)
  *
  * Usage:
  *   npx tsx scripts/etl-bible-text.ts
@@ -18,16 +17,45 @@
  *   D1_DATABASE_ID
  */
 
+import './load-env.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { d1 } from '../src/lib/cloudflare.js';
+
+// ---------------------------------------------------------------------------
+// SQL building helpers (mirrors cloudflare.ts internals for direct use here)
+// ---------------------------------------------------------------------------
+
+const ROWS_PER_INSERT = 200;
+
+function sqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return String(value);
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+/**
+ * Builds a single multi-row INSERT SQL string from an array of row tuples.
+ * Groups rows into statements of up to ROWS_PER_INSERT rows each.
+ */
+function buildMultiRowInserts(prefix: string, rows: unknown[][]): string {
+  const lines: string[] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_INSERT) {
+    const chunk = rows.slice(start, start + ROWS_PER_INSERT);
+    const tuples = chunk
+      .map((row) => `(${row.map(sqlLiteral).join(', ')})`)
+      .join(', ');
+    lines.push(`${prefix} ${tuples};`);
+  }
+  return lines.join('\n') + '\n';
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 const DATA_DIR = path.resolve(process.cwd(), 'data/scrollmapper');
-const BATCH_SIZE = 100;
 
 // ---------------------------------------------------------------------------
 // Translation metadata
@@ -497,31 +525,6 @@ function parseCsv(csvPath: string, csvNameToBook: Map<string, BookDef>): ParsedV
   return verses;
 }
 
-// ---------------------------------------------------------------------------
-// Batching
-// ---------------------------------------------------------------------------
-
-async function batchInsert(
-  statements: Array<{ sql: string; params: unknown[] }>,
-  label: string
-): Promise<void> {
-  let inserted = 0;
-
-  for (let offset = 0; offset < statements.length; offset += BATCH_SIZE) {
-    const batch = statements.slice(offset, offset + BATCH_SIZE);
-    await d1.batch(batch);
-    inserted += batch.length;
-
-    if (statements.length > BATCH_SIZE) {
-      const pct = Math.round((inserted / statements.length) * 100);
-      process.stdout.write(`\r  [${label}] ${inserted}/${statements.length} (${pct}%)`);
-    }
-  }
-
-  if (statements.length > BATCH_SIZE) {
-    process.stdout.write('\n');
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Logging
@@ -537,27 +540,29 @@ function log(msg: string): void {
 
 async function loadTranslations(): Promise<void> {
   log('Loading translations...');
-  const statements = TRANSLATIONS.map((t) => ({
-    sql: 'INSERT OR IGNORE INTO translations (id, abbreviation, name, year) VALUES (?, ?, ?, ?)',
-    params: [t.id, t.abbreviation, t.name, t.year],
-  }));
-  await batchInsert(statements, 'translations');
-  log(`  Inserted ${statements.length} translation records`);
+  const rows = TRANSLATIONS.map((t) => [t.id, t.abbreviation, t.name, t.year]);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO translations (id, abbreviation, name, year) VALUES',
+    rows
+  );
+  await d1.batchFile(sql);
+  log(`  Inserted ${rows.length} translation records`);
 }
 
 async function loadBooks(): Promise<void> {
   log('Loading books...');
-  const statements = BOOKS.map((b) => ({
-    sql: 'INSERT OR IGNORE INTO books (id, abbreviation, name, testament, canonical_order) VALUES (?, ?, ?, ?, ?)',
-    params: [b.id, b.abbreviation, b.name, b.testament, b.id],
-  }));
-  await batchInsert(statements, 'books');
-  log(`  Inserted ${statements.length} book records`);
+  const rows = BOOKS.map((b) => [b.id, b.abbreviation, b.name, b.testament, b.id]);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO books (id, abbreviation, name, testament, canonical_order) VALUES',
+    rows
+  );
+  await d1.batchFile(sql);
+  log(`  Inserted ${rows.length} book records`);
 }
 
 async function loadBookAliases(): Promise<void> {
   log('Loading book aliases...');
-  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const rows: unknown[][] = [];
 
   for (const book of BOOKS) {
     // Deduplicate aliases for this book
@@ -565,15 +570,16 @@ async function loadBookAliases(): Promise<void> {
     for (const alias of book.aliases) {
       if (seen.has(alias)) continue;
       seen.add(alias);
-      statements.push({
-        sql: 'INSERT OR IGNORE INTO book_aliases (alias, book_id) VALUES (?, ?)',
-        params: [alias, book.id],
-      });
+      rows.push([alias, book.id]);
     }
   }
 
-  await batchInsert(statements, 'book_aliases');
-  log(`  Inserted ${statements.length} alias records`);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO book_aliases (alias, book_id) VALUES',
+    rows
+  );
+  await d1.batchFile(sql);
+  log(`  Inserted ${rows.length} alias records`);
 }
 
 async function loadVerses(
@@ -595,7 +601,7 @@ async function loadVerses(
 
   let skipped = 0;
   let remapped = 0;
-  const statements: Array<{ sql: string; params: unknown[] }> = [];
+  const rows: unknown[][] = [];
 
   for (const v of verses) {
     // For non-KJV translations, check that the verse coordinate exists in KJV.
@@ -614,16 +620,17 @@ async function loadVerses(
       remapped++; // counts verses that matched (we log true remaps only on mismatch)
     }
 
-    statements.push({
-      sql: 'INSERT OR IGNORE INTO verses (book_id, chapter, verse, translation_id, text) VALUES (?, ?, ?, ?, ?)',
-      params: [v.bookId, v.chapter, v.verse, translation.id, v.text],
-    });
+    rows.push([v.bookId, v.chapter, v.verse, translation.id, v.text]);
   }
 
-  log(`  Inserting ${statements.length} verses (${skipped} skipped for versification)...`);
-  await batchInsert(statements, translation.abbreviation);
+  log(`  Inserting ${rows.length} verses (${skipped} skipped for versification)...`);
+  const sql = buildMultiRowInserts(
+    'INSERT OR IGNORE INTO verses (book_id, chapter, verse, translation_id, text) VALUES',
+    rows
+  );
+  await d1.batchFile(sql);
 
-  return statements.length;
+  return rows.length;
 }
 
 // ---------------------------------------------------------------------------

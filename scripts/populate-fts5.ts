@@ -19,6 +19,7 @@
  *   D1_DATABASE_ID
  */
 
+import './load-env.js';
 import { d1 } from '../src/lib/cloudflare.js';
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@
  *   VECTORIZE_INDEX_NAME
  */
 
+import './load-env.js';
 import { d1, workersAi } from '../src/lib/cloudflare.js';
 
 // ---------------------------------------------------------------------------

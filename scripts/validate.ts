@@ -11,6 +11,7 @@
  * Exits 0 if all checks pass, 1 if any fail.
  */
 
+import './load-env.js';
 import { d1 } from '../src/lib/cloudflare.js';
 
 // ─── Result tracking ──────────────────────────────────────────────────────────
