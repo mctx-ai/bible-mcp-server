@@ -2,86 +2,81 @@
 
 Give your AI assistant the ability to study the Bible — search by meaning, look up original Hebrew and Greek words, compare translations side by side, trace cross-references, and explore topics across the entire canon.
 
-This server is available at [bible.mctx.ai](https://bible.mctx.ai). Connect it to any MCP-compatible AI client to unlock deep Bible study capabilities.
+Connect at [bible.mctx.ai](https://bible.mctx.ai) — works with any MCP-compatible AI client.
 
 ---
 
-## What It Does
+## What Makes This Different
 
-The Bible MCP Server provides verified scripture text from five public domain English translations alongside a rich set of study tools. Every verse returned includes a structured citation with book, chapter, verse number, and translation — so your AI assistant can cite its sources precisely.
-
-**Data sources:**
-- 5 complete English translations (31,102 verses each)
-- Strong's Hebrew and Greek concordance
-- 340,000+ cross-references
-- Morphological analysis for original language study
-- Nave's Topical Bible
+Most Bible tools offer text lookup. This server goes further: semantic search powered by 155,510 vector embeddings, full original-language analysis, 606,140 cross-references, and topical discovery via Nave's — all accessible through natural conversation with your AI assistant. No other MCP server combines all of these capabilities in one place.
 
 ---
 
-## Supported Translations
+## Data at a Glance
 
-| Abbreviation | Full Name |
+| Dataset | Scale |
 |---|---|
-| KJV | King James Version |
-| WEB | World English Bible |
-| ASV | American Standard Version |
-| YLT | Young's Literal Translation |
-| DBY | Darby Translation |
+| English translations | 5 complete (KJV, WEB, ASV, YLT, Darby) — 155,510 verses total |
+| Semantic search embeddings | 155,510 vector embeddings |
+| Cross-references | 606,140 (OpenBible.info dataset) |
+| Strong's concordance entries | 17,543 Hebrew and Greek entries |
+| Lexicon definitions | 17,543 entries with short and long definitions |
+| Morphology records | 447,734 word-level parsing records (OT Hebrew + NT Greek) |
+| Nave's Topical Bible | 5,319 categories, 140,654 verse associations |
 
 ---
 
 ## Tools
 
 ### search_bible
-Searches the Bible by meaning using semantic similarity. Ask a question or describe a concept in natural language and receive ranked passages that match the intent — not just the keywords. Filter by translation, book, or testament.
+Searches by meaning using semantic similarity. Ask a question or describe a concept in natural language — receive ranked passages that match the intent, not just the keywords. Powered by 155K+ vector embeddings. Filter by translation, book, or testament.
 
 ### find_text
-Searches for an exact keyword or phrase across all translations or a specific one. When no translation filter is provided, results include matches from all five supported translations. Results are ordered canonically from Genesis to Revelation.
+Full-text keyword search across all translations or a specific one using FTS5. Results are ordered canonically from Genesis to Revelation.
 
 ### compare_translations
-Returns the same verse or passage in all five translations side by side, making textual differences and translation choices immediately visible.
+Returns any verse or passage in all five translations side by side, making translation choices and textual differences immediately visible.
 
 ### cross_references
-Finds related passages for a given verse — other parts of scripture that illuminate, echo, or expand on the same idea.
+Finds related passages for a given verse from a dataset of 606,140 cross-references — other parts of scripture that illuminate, echo, or expand on the same idea.
 
 ### word_study
-Performs an original language analysis for a specific word in a verse. Returns the Hebrew or Greek word, its Strong's number, transliteration, definition, BDB or Thayer lexicon entry, morphological parsing, and other verses where the same word appears.
+Original language analysis for a specific word in a verse. Returns the Hebrew or Greek word, its Strong's number, transliteration, BDB or Thayer lexicon definition, morphological parsing, and every other verse where the same word appears.
 
 ### concordance
-Finds every verse where a given Hebrew or Greek word (identified by Strong's number) occurs across the entire Bible.
+Finds every verse where a given Hebrew or Greek word (by Strong's number) occurs across the entire Bible.
 
 ### topical_search
-Discovers verses organized around a topic using Nave's Topical Bible — a curated index of thousands of biblical subjects, persons, and themes.
+Discovers verses organized by topic using Nave's Topical Bible — 5,319 curated categories covering biblical subjects, persons, and themes with 140,654 verse associations.
 
 ---
 
 ## Resources
 
-Resources let AI clients read structured data directly from the server.
-
 | URI | Description |
 |---|---|
-| `bible://translations` | Lists all available translations with their full names and abbreviations |
-| `bible://{translation}/{book}/{chapter}` | Returns a full chapter of scripture |
-| `bible://{translation}/{book}/{chapter}/{verse}` | Returns a specific verse with surrounding context |
+| `bible://translations` | Lists all available translations |
+| `bible://{translation}/{book}/{chapter}` | Returns a full chapter |
+| `bible://{translation}/{book}/{chapter}/{verse}` | Returns a specific verse with context |
+
+Every verse response includes a structured citation: book, chapter, verse number, and translation.
 
 ---
 
 ## Example Use Cases
 
-**Comparative Bible study** — Ask the AI to show how different translations render a verse and explain meaningful differences in word choice.
+**Word studies in original languages** — Look up "love" in John 3:16, see whether the Greek is *agape* or *phileo*, and trace every verse where that same word appears across the New Testament.
 
-**Word studies in original languages** — Look up a word like "love" in John 3:16 and trace whether the Greek is *agape*, *phileo*, or something else — then find every other verse where that same Greek word appears.
+**Comparative translation study** — Show how five translations render a passage and where meaningful differences in word choice appear.
 
-**Topical research** — Find what the Bible says about patience, justice, or prayer using Nave's organized topic index.
+**Topical research** — Find what the Bible says about patience, justice, or covenant using Nave's organized topic index across 5,319 categories.
+
+**Semantic search** — Surface passages that speak to a theme even when the exact word is absent. Search by concept, not keyword.
 
 **Sermon and teaching preparation** — Gather cross-references, compare translations, and study original language nuances for a passage — all in one conversation.
-
-**Theological investigation** — Search by concept rather than keyword to surface passages that speak to a theme even when the exact word is absent.
 
 ---
 
 ## How to Connect
 
-Visit [mctx.ai](https://mctx.ai) to subscribe to this server and get connection instructions for your MCP client.
+Visit [mctx.ai](https://mctx.ai) to subscribe and get connection instructions for your MCP client.
