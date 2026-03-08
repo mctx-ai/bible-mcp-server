@@ -1,0 +1,175 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Check for runtime changes
+        id: hash-check
+        run: |
+          NEW_HASH=$(sha256sum dist/index.js | cut -d' ' -f1)
+          OLD_HASH=$(git show origin/release:.dist-hash 2>/dev/null || echo "none")
+          echo "new_hash=$NEW_HASH" >> $GITHUB_OUTPUT
+          echo "old_hash=$OLD_HASH" >> $GITHUB_OUTPUT
+          if [ "$NEW_HASH" = "$OLD_HASH" ]; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "No runtime changes detected. Skipping release."
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Runtime changes detected. Proceeding with release."
+          fi
+
+      - name: Determine version bump
+        if: steps.hash-check.outputs.changed == 'true'
+        id: version
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Get current version from release branch
+          CURRENT=$(git show origin/release:package.json 2>/dev/null | jq -r .version 2>/dev/null || echo "0.0.0")
+          echo "Current version: $CURRENT"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          # Determine bump type from commit message
+          if echo "$COMMIT_MSG" | grep -qE '^[a-z]+(\(.+\))?!:'; then
+            # Breaking change (feat!:, fix!:, etc.)
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            BUMP="major"
+          elif echo "$COMMIT_MSG" | grep -qE '^feat(\(.+\))?:'; then
+            # Feature
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            BUMP="minor"
+          else
+            # Everything else (fix, chore, docs, etc.)
+            PATCH=$((PATCH + 1))
+            BUMP="patch"
+          fi
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "bump=$BUMP" >> $GITHUB_OUTPUT
+          echo "Bumping $BUMP: $CURRENT -> $NEW_VERSION"
+
+      - name: Generate app token
+        if: steps.hash-check.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.MCTX_BOT_APP_ID }}
+          private-key: ${{ secrets.MCTX_BOT_PRIVATE_KEY }}
+
+      - name: Push to release branch
+        if: steps.hash-check.outputs.changed == 'true'
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+          NEW_HASH: ${{ steps.hash-check.outputs.new_hash }}
+        run: |
+          if ! echo "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: new_version '${NEW_VERSION}' is not a valid semver. Aborting."
+            exit 1
+          fi
+
+          git config user.name "mctx-bot[bot]"
+          git config user.email "mctx-bot[bot]@users.noreply.github.com"
+
+          # Save built artifacts BEFORE switching branches
+          cp -r dist/ /tmp/dist-release/
+          cp package.json /tmp/package-release.json
+
+          # Checkout release branch
+          git fetch origin release
+          git checkout release
+
+          # Copy artifacts back
+          cp -r /tmp/dist-release/* dist/ 2>/dev/null || mkdir -p dist && cp -r /tmp/dist-release/* dist/
+          cp /tmp/package-release.json package.json
+
+          # Update package.json version
+          jq --arg v "$NEW_VERSION" '.version = $v' package.json > package.json.tmp && mv package.json.tmp package.json
+
+          # Write dist hash
+          echo "$NEW_HASH" > .dist-hash
+
+          # Commit and push
+          git add -f dist/ package.json .dist-hash
+          git commit -m "release: v${NEW_VERSION}"
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git"
+          git push origin release
+
+      - name: Create GitHub release
+        if: steps.hash-check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+        run: |
+          gh release create "v${NEW_VERSION}" \
+            --repo ${{ github.repository }} \
+            --target release \
+            --title "v${NEW_VERSION}" \
+            --generate-notes
+
+      - name: Bump version on main
+        if: steps.hash-check.outputs.changed == 'true'
+        id: bump-main
+        continue-on-error: true
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+          NEW_VERSION: ${{ steps.version.outputs.new_version }}
+        run: |
+          if ! echo "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: new_version '${NEW_VERSION}' is not a valid semver. Aborting."
+            exit 1
+          fi
+
+          git config user.name "mctx-bot[bot]"
+          git config user.email "mctx-bot[bot]@users.noreply.github.com"
+
+          git checkout main
+          git pull --rebase origin main
+
+          jq --arg v "$NEW_VERSION" '.version = $v' package.json > package.json.tmp && mv package.json.tmp package.json
+
+          git add package.json
+          git commit -m "chore: bump version to ${NEW_VERSION} [skip ci]"
+
+          # Verify only package.json was modified
+          changed_files=$(git diff --name-only HEAD~1)
+          if [ "$changed_files" != "package.json" ]; then
+            echo "ERROR: Unexpected files modified: ${changed_files}"
+            exit 1
+          fi
+
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git"
+          git push origin main
+
+      - name: Warn if version sync to main failed
+        if: steps.bump-main.outcome == 'failure'
+        run: |
+          echo "::warning::Failed to sync version ${{ steps.version.outputs.new_version }} back to main branch. The release was created successfully on the release branch, but main still has the old version. Manual intervention may be required."

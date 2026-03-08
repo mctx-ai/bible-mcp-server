@@ -1,0 +1,15 @@
+name: PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: mctx-ai/action-pr-title@e519e92d9759912340e7844d13a0215073798609 # v1.0.0

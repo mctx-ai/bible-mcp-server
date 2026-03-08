@@ -1,0 +1,8 @@
+# Local-only files (session state, permissions, temporary data)
+settings.local.json
+.perm-tracking.json
+
+# Session cache and temporary files
+*.session
+.cache/
+.tmp/

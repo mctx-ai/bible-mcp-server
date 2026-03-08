@@ -1,0 +1,35 @@
+{
+  "name": "example-mcp-server",
+  "version": "0.3.52",
+  "description": "A reference MCP server built with @mctx-ai/mcp-server, showcasing the full range of framework capabilities. Provides tools for personalized greetings, mathematical calculations, progress-tracked data analysis, and LLM-assisted Q&A via sampling. Exposes resources through both static URIs and dynamic URI templates, and includes prompt templates for code review and debugging assistance. Features structured logging and environment variable configuration throughout. Designed as a working example and starting point — explore the source at github.com/mctx-ai/example-mcp-server or use the @mctx-ai/mcp-server framework to build your own.",
+  "homepage": "https://mctx.ai",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --minify --platform=node --format=esm --outfile=dist/index.js",
+    "dev": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@mctx-ai/mcp-server --sourcemap && run-p dev:build dev:server",
+    "dev:build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@mctx-ai/mcp-server --watch --sourcemap",
+    "dev:server": "mctx-dev dist/index.js",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/"
+  },
+  "dependencies": {
+    "@mctx-ai/mcp-server": "^0.6.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@mctx-ai/mcp-dev": "^0.5.5",
+    "@types/node": "^25.3.5",
+    "esbuild": "^0.27.3",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^10.1.8",
+    "npm-run-all2": "^7.0.2",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
+  },
+  "license": "MIT"
+}

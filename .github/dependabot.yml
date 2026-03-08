@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: main
+    groups:
+      patch-updates:
+        update-types:
+          - patch
+      minor-dev-updates:
+        dependency-type: development
+        update-types:
+          - minor
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: main
+    groups:
+      actions:
+        patterns:
+          - "*"
