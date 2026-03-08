@@ -165,7 +165,7 @@ async function createMetadataIndex(propertyName: string, indexType: string): Pro
   await cfManagement<unknown>(
     `/accounts/${accountId}/vectorize/v2/indexes/${indexName}/metadata_index/create`,
     'POST',
-    { propertyName, type: indexType }
+    { propertyName, indexType }
   );
   log(`  Created metadata index on "${propertyName}"`);
 }
