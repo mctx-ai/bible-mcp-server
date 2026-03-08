@@ -108,23 +108,16 @@ async function d1Batch(
     );
   }
 
-  // The /query endpoint accepts a single {sql, params} object where multiple
-  // statements can be joined with semicolons and executed as a batch.
-  // Positional params (?) are flattened in order across all statements.
-  const sql = statements.map((s) => s.sql.trimEnd().replace(/;$/, '')).join(';');
-  const params = statements.flatMap((s) => s.params ?? []);
-
-  const result = await cfFetch<D1ResultSet[]>(`${d1Base}/query`, {
-    method: 'POST',
-    body: JSON.stringify({ sql, params }),
-  });
-
-  // The API returns one result set per statement.
-  if (!Array.isArray(result)) {
-    throw new Error('D1 batch query returned an unexpected non-array result');
+  // The D1 HTTP API does not support multiple statements in a single /query
+  // request — it rejects them with "params with multiple statements is not
+  // supported". Send each statement as its own POST to /query in sequence.
+  const results: D1Result[] = [];
+  for (const statement of statements) {
+    const result = await d1Query(statement.sql, statement.params ?? []);
+    results.push(result);
   }
 
-  return result;
+  return results;
 }
 
 export const d1 = {
