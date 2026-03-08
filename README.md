@@ -1,88 +1,82 @@
-<img src="https://mctx.ai/brand/logo-purple.png" alt="mctx" width="120">
+# Bible MCP Server
 
-**Free MCP Hosting. Set Your Price. Get Paid.**
+Give your AI assistant the ability to study the Bible — search by meaning, look up original Hebrew and Greek words, compare translations side by side, trace cross-references, and explore topics across the entire canon.
 
-# bible\-mcp\-server
-
-The\ Bible\ MCP\ Server\.
+Connect at [bible.mctx.ai](https://bible.mctx.ai) — works with any MCP-compatible AI client.
 
 ---
 
-## Quick Start
+## What Makes This Different
 
-```bash
-npm install
-npm run dev
-```
-
-The dev server runs esbuild in watch mode and hot-reloads via `mctx-dev` on every rebuild.
+Most Bible tools offer text lookup. This server goes further: semantic search powered by 155,510 vector embeddings, full original-language analysis, 606,140 cross-references, and topical discovery via Nave's — all accessible through natural conversation with your AI assistant. No other MCP server combines all of these capabilities in one place.
 
 ---
 
-## Development
+## Data at a Glance
 
-### Build
-```bash
-npm run build
-```
-Bundles `src/index.ts` → `dist/index.js` using esbuild (minified ESM output).
-
-### Dev Server
-```bash
-npm run dev
-```
-Runs parallel watch mode:
-- `dev:build` — esbuild watch (rebuilds on source changes)
-- `dev:server` — mctx-dev hot-reloads server on rebuild
-
-### Testing
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm test -- --watch
-```
-
-### Linting
-```bash
-npm run lint
-```
-
-### Formatting
-```bash
-# Format all files
-npm run format
-
-# Check formatting without modifying
-npm run format:check
-```
+| Dataset | Scale |
+|---|---|
+| English translations | 5 complete (KJV, WEB, ASV, YLT, Darby) — 155,510 verses total |
+| Semantic search embeddings | 155,510 vector embeddings |
+| Cross-references | 606,140 (OpenBible.info dataset) |
+| Strong's concordance entries | 17,543 Hebrew and Greek entries |
+| Lexicon definitions | 17,543 entries with short and long definitions |
+| Morphology records | 447,734 word-level parsing records (OT Hebrew + NT Greek) |
+| Nave's Topical Bible | 5,319 categories, 140,654 verse associations |
 
 ---
 
-## Environment Variables
+## Tools
 
-Add your environment variables here. Set them in the [mctx.ai dashboard](https://mctx.ai) when deployed — changes trigger a seamless automatic redeploy.
+### search_bible
+Searches by meaning using semantic similarity. Ask a question or describe a concept in natural language — receive ranked passages that match the intent, not just the keywords. Powered by 155K+ vector embeddings. Filter by translation, book, or testament.
 
-| Variable | Default | Description |
-|---|---|---|
-| _(none yet)_ | — | Add yours here |
+### find_text
+Full-text keyword search across all translations or a specific one using FTS5. Results are ordered canonically from Genesis to Revelation.
+
+### compare_translations
+Returns any verse or passage in all five translations side by side, making translation choices and textual differences immediately visible.
+
+### cross_references
+Finds related passages for a given verse from a dataset of 606,140 cross-references — other parts of scripture that illuminate, echo, or expand on the same idea.
+
+### word_study
+Original language analysis for a specific word in a verse. Returns the Hebrew or Greek word, its Strong's number, transliteration, BDB or Thayer lexicon definition, morphological parsing, and every other verse where the same word appears.
+
+### concordance
+Finds every verse where a given Hebrew or Greek word (by Strong's number) occurs across the entire Bible.
+
+### topical_search
+Discovers verses organized by topic using Nave's Topical Bible — 5,319 curated categories covering biblical subjects, persons, and themes with 140,654 verse associations.
 
 ---
 
-## Deploy
+## Resources
 
-1. Visit [mctx.ai](https://mctx.ai) and connect your repository
-2. Set any environment variables in the dashboard
-3. Deploy — mctx reads `package.json` for server configuration
+| URI | Description |
+|---|---|
+| `bible://translations` | Lists all available translations |
+| `bible://{translation}/{book}/{chapter}` | Returns a full chapter |
+| `bible://{translation}/{book}/{chapter}/{verse}` | Returns a specific verse with context |
 
-mctx handles TLS, scaling, and uptime. You keep the code. Set your price and get paid when other developers use your server.
+Every verse response includes a structured citation: book, chapter, verse number, and translation.
 
 ---
 
-## Learn More
+## Example Use Cases
 
-- [`@mctx-ai/mcp-server`](https://github.com/mctx-ai/mcp-server) — Framework documentation and API reference
-- [docs.mctx.ai](https://docs.mctx.ai) — Platform guides for deploying and managing MCP servers
-- [mctx.ai](https://mctx.ai) — Host your MCP server for free
-- [MCP Specification](https://modelcontextprotocol.io) — The protocol spec this server implements
+**Word studies in original languages** — Look up "love" in John 3:16, see whether the Greek is *agape* or *phileo*, and trace every verse where that same word appears across the New Testament.
+
+**Comparative translation study** — Show how five translations render a passage and where meaningful differences in word choice appear.
+
+**Topical research** — Find what the Bible says about patience, justice, or covenant using Nave's organized topic index across 5,319 categories.
+
+**Semantic search** — Surface passages that speak to a theme even when the exact word is absent. Search by concept, not keyword.
+
+**Sermon and teaching preparation** — Gather cross-references, compare translations, and study original language nuances for a passage — all in one conversation.
+
+---
+
+## How to Connect
+
+Visit [mctx.ai](https://mctx.ai) to subscribe and get connection instructions for your MCP client.
