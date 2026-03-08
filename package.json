@@ -49,7 +49,8 @@
     "etl:strongs": "tsx scripts/etl-strongs.ts",
     "search:fts5": "tsx scripts/populate-fts5.ts",
     "search:embeddings": "tsx scripts/ingest-embeddings.ts",
-    "data:validate": "tsx scripts/validate.ts"
+    "data:validate": "tsx scripts/validate.ts",
+    "setup:infra": "bash scripts/setup-infra.sh"
   },
   "dependencies": {
     "@mctx-ai/mcp-server": "^0.6.1"
