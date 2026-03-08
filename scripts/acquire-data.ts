@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as path from 'path';
 import { pipeline } from 'stream/promises';
+import * as readline from 'readline';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -42,17 +43,17 @@ interface DownloadTarget {
 /**
  * Bible translations from scrollmapper/bible_databases (CSV format).
  * Raw GitHub URLs pointing to the master branch.
+ *
+ * NOTE: WEB (World English Bible) is NOT included here because the
+ * scrollmapper/bible_databases repository does not provide a WEB.csv file.
+ * WEB is acquired separately from alshival/super_bible and converted to
+ * scrollmapper format during acquisition — see acquireWEB() below.
  */
 const BIBLE_TRANSLATIONS: DownloadTarget[] = [
   {
     label: 'KJV (King James Version)',
     url: 'https://raw.githubusercontent.com/scrollmapper/bible_databases/master/formats/csv/KJV.csv',
     dest: 'scrollmapper/KJV.csv',
-  },
-  {
-    label: 'WEB (World English Bible)',
-    url: 'https://raw.githubusercontent.com/scrollmapper/bible_databases/master/formats/csv/WEB.csv',
-    dest: 'scrollmapper/WEB.csv',
   },
   {
     label: 'ASV (American Standard Version)',
@@ -148,6 +149,23 @@ const NAVE_TARGETS: DownloadTarget[] = [
     dest: 'nave/NavesTopicalDictionary.csv',
   },
 ];
+
+/**
+ * WEB (World English Bible) translation.
+ *
+ * The scrollmapper/bible_databases repository does not include WEB. Instead,
+ * we source it from alshival/super_bible, which packages WEB in a different
+ * CSV format (testament, book, title, chapter, verse, text, version, language)
+ * with numeric book IDs and footnote markers in curly braces {like this}.
+ *
+ * acquireWEB() downloads this source file to a temporary path, converts it to
+ * the standard scrollmapper format (Book,Chapter,Verse,Text), strips footnote
+ * markers, and writes the result to data/scrollmapper/WEB.csv.
+ */
+const WEB_SOURCE_URL =
+  'https://raw.githubusercontent.com/alshival/super_bible/main/SUPER_BIBLE/version_files/super_bible_WEB.csv';
+const WEB_DEST = 'scrollmapper/WEB.csv';
+const WEB_TEMP_DEST = 'scrollmapper/.WEB_source.csv';
 
 const ALL_TARGETS: DownloadTarget[] = [
   ...BIBLE_TRANSLATIONS,
@@ -308,6 +326,185 @@ async function acquire(target: DownloadTarget): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// WEB (World English Bible) — download + convert from alshival/super_bible
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses a single CSV line that may contain quoted fields.
+ * Handles escaped double-quotes within quoted fields ("" → ").
+ */
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        // Peek ahead: "" inside quotes is an escaped quote
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++; // skip escaped quote
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+  }
+
+  fields.push(current);
+  return fields;
+}
+
+/**
+ * Strips footnote markers of the form {text} from a verse string.
+ * The super_bible WEB CSV embeds translator footnotes inline using curly braces.
+ */
+function stripFootnoteMarkers(text: string): string {
+  return text.replace(/\{[^}]*\}/g, '').trim();
+}
+
+/**
+ * Escapes a field for CSV output — wraps in double-quotes if the value
+ * contains a comma, double-quote, or newline.
+ */
+function csvField(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/**
+ * Converts a super_bible WEB CSV (source) to scrollmapper format (output).
+ *
+ * Source columns: testament,book,title,chapter,verse,text,version,language
+ * Output columns: Book,Chapter,Verse,Text
+ *
+ * The `title` column provides the canonical book name (e.g. "Genesis"), and
+ * footnote markers {like this} are stripped from the `text` column.
+ */
+async function convertSuperBibleToScrollmapper(
+  sourcePath: string,
+  destPath: string,
+): Promise<void> {
+  const input = fs.createReadStream(sourcePath);
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
+
+  const lines: string[] = [];
+  lines.push('Book,Chapter,Verse,Text');
+
+  let isHeader = true;
+  let titleIdx = -1;
+  let chapterIdx = -1;
+  let verseIdx = -1;
+  let textIdx = -1;
+  let rowsConverted = 0;
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+
+    const fields = parseCSVLine(line);
+
+    if (isHeader) {
+      // Locate column indices from the header row (case-insensitive)
+      const lower = fields.map((f) => f.toLowerCase());
+      titleIdx = lower.indexOf('title');
+      chapterIdx = lower.indexOf('chapter');
+      verseIdx = lower.indexOf('verse');
+      textIdx = lower.indexOf('text');
+
+      if (
+        titleIdx === -1 ||
+        chapterIdx === -1 ||
+        verseIdx === -1 ||
+        textIdx === -1
+      ) {
+        throw new Error(
+          `super_bible WEB CSV is missing expected columns. Found: ${fields.join(', ')}`,
+        );
+      }
+      isHeader = false;
+      continue;
+    }
+
+    const book = fields[titleIdx]?.trim() ?? '';
+    const chapter = fields[chapterIdx]?.trim() ?? '';
+    const verse = fields[verseIdx]?.trim() ?? '';
+    const rawText = fields[textIdx]?.trim() ?? '';
+    const text = stripFootnoteMarkers(rawText);
+
+    if (!book || !chapter || !verse) continue;
+
+    lines.push(
+      `${csvField(book)},${csvField(chapter)},${csvField(verse)},${csvField(text)}`,
+    );
+    rowsConverted++;
+  }
+
+  fs.writeFileSync(destPath, lines.join('\n') + '\n', 'utf8');
+  log(`CONVERT WEB: ${rowsConverted} verses written to data/${WEB_DEST}`);
+}
+
+/**
+ * Acquires the WEB translation from alshival/super_bible and converts it to
+ * scrollmapper format, saving the result to data/scrollmapper/WEB.csv.
+ *
+ * Returns true on success, false on failure.
+ */
+async function acquireWEB(): Promise<boolean> {
+  const destPath = path.join(DATA_DIR, WEB_DEST);
+  const tempPath = path.join(DATA_DIR, WEB_TEMP_DEST);
+  const destDir = path.dirname(destPath);
+
+  // Idempotency — skip if output file already exists
+  if (fs.existsSync(destPath)) {
+    log(`SKIP   WEB (World English Bible) (already exists: data/${WEB_DEST})`);
+    return true;
+  }
+
+  fs.mkdirSync(destDir, { recursive: true });
+
+  log('START  WEB (World English Bible)');
+  log(`       source: ${WEB_SOURCE_URL}`);
+  log(`       -> data/${WEB_DEST}`);
+
+  try {
+    await downloadWithRetry(WEB_SOURCE_URL, tempPath);
+
+    const sourceBytes = fs.statSync(tempPath).size;
+    log(`OK     WEB source downloaded (${(sourceBytes / 1024).toFixed(1)} KB)`);
+
+    await convertSuperBibleToScrollmapper(tempPath, destPath);
+
+    const outputBytes = fs.statSync(destPath).size;
+    log(`OK     WEB (World English Bible) (${(outputBytes / 1024).toFixed(1)} KB)`);
+
+    return true;
+  } catch (err) {
+    error(`FAIL   WEB (World English Bible): ${String(err)}`);
+    if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+    return false;
+  } finally {
+    // Always clean up the temp source file
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -318,9 +515,10 @@ async function main(): Promise<void> {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   log(`Data directory: ${DATA_DIR}\n`);
 
-  const results = await Promise.allSettled(
-    ALL_TARGETS.map((target) => acquire(target)),
-  );
+  const results = await Promise.allSettled([
+    ...ALL_TARGETS.map((target) => acquire(target)),
+    acquireWEB(),
+  ]);
 
   const succeeded = results.filter(
     (r) => r.status === 'fulfilled' && r.value,

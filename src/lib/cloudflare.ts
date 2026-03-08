@@ -108,13 +108,21 @@ async function d1Batch(
     );
   }
 
-  // The /raw endpoint accepts an array of {sql, params} objects.
-  const result = await cfFetch<D1ResultSet[]>(`${d1Base}/raw`, {
+  // The /query endpoint accepts a single {sql, params} object where multiple
+  // statements can be joined with semicolons and executed as a batch.
+  // Positional params (?) are flattened in order across all statements.
+  const sql = statements.map((s) => s.sql.trimEnd().replace(/;$/, '')).join(';');
+  const params = statements.flatMap((s) => s.params ?? []);
+
+  const result = await cfFetch<D1ResultSet[]>(`${d1Base}/query`, {
     method: 'POST',
-    body: JSON.stringify(
-      statements.map(({ sql, params = [] }) => ({ sql, params }))
-    ),
+    body: JSON.stringify({ sql, params }),
   });
+
+  // The API returns one result set per statement.
+  if (!Array.isArray(result)) {
+    throw new Error('D1 batch query returned an unexpected non-array result');
+  }
 
   return result;
 }
