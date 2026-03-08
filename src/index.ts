@@ -36,8 +36,30 @@ import topicalSearchHandler from './tools/topical-search.js';
 // ─── Server ──────────────────────────────────────────────────────────────────
 
 const server = createServer({
-  instructions:
-    'This server provides verified Bible text from 5 public domain translations (KJV, WEB, ASV, YLT, Darby) with semantic search, cross-references, word study tools, and full citation on every response. Every verse returned includes a structured citation with book, chapter, verse number, and translation. Available tools: search_bible (semantic search by meaning), find_text (keyword search), compare_translations (side-by-side comparison), cross_references (related passages), word_study (original Hebrew/Greek analysis), concordance (word occurrences), topical_search (topic-based discovery). Available resources: bible://translations (list translations), bible://{translation}/{book}/{chapter} (full chapter), bible://{translation}/{book}/{chapter}/{verse} (specific verse with context). This server is hosted on mctx, a platform for building and hosting MCP servers.',
+  instructions: `Bible MCP Server — 5 public domain translations: KJV, WEB, ASV, YLT, Darby (case-insensitive). Every result includes a structured citation (book, chapter, verse, translation).
+
+TOOL SELECTION GUIDE:
+• Look up a known verse → use bible://{translation}/{book}/{chapter}/{verse} resource (returns verse + context)
+• Read a full chapter → use bible://{translation}/{book}/{chapter} resource
+• Search by MEANING or concept ("hope in suffering", "what does the Bible say about X") → search_bible (semantic/AI)
+• Search by TOPIC with curated editorial index → topical_search (Nave's + semantic; theological topics)
+• Find an EXACT WORD OR PHRASE in verse text → find_text (FTS keyword search; quick, returns canonical order)
+• Survey ALL occurrences of a word, grouped by book → concordance
+• Compare how different translations render a passage → compare_translations (all 5 translations side-by-side)
+• Find related passages for a verse → cross_references (curated cross-reference database, ordered by confidence)
+• Study the Hebrew/Greek word behind an English word in a verse → word_study (Strong's + BDB/Thayer lexicon + morphology)
+
+DISAMBIGUATION:
+- search_bible vs find_text: search_bible finds conceptually related verses; find_text requires the exact word/phrase in the text.
+- find_text vs concordance: find_text is faster for spot checks; concordance groups all occurrences by book with totals.
+- search_bible vs topical_search: topical_search combines Nave's editorial index with semantic search; prefer for classic theological topics. Use search_bible for open-ended queries.
+
+RESOURCES:
+• bible://translations — list all translations with abbreviation, name, year
+• bible://{translation}/{book}/{chapter} — full chapter text (sequential reading)
+• bible://{translation}/{book}/{chapter}/{verse} — specific verse with surrounding context (targeted lookup)
+
+Book names accept full names, abbreviations, and common aliases (Gen, Matt, 1 Cor, Rev, etc.).`,
 });
 
 // ─── Register Resources ───────────────────────────────────────────────────────

@@ -1,12 +1,34 @@
 {
   "name": "bible",
   "version": "0.3.52",
-  "description": "Verified Bible text from 5 public domain translations with semantic search, cross-references, word study tools, and full citation on every response.",
+  "description": "Give your AI assistant deep Bible study capabilities: semantic search by meaning, side-by-side translation comparison, original Hebrew and Greek word studies with Strong's concordance, 340K+ cross-references, and topical discovery via Nave's. Covers 5 complete public domain translations (KJV, WEB, ASV, YLT, Darby). Every verse includes a structured citation. Built for MCP-compatible AI clients.",
   "homepage": "https://bible.mctx.ai",
   "repository": {
     "type": "git",
     "url": "https://github.com/mctx-ai/bible-mcp-server.git"
   },
+  "bugs": {
+    "url": "https://github.com/mctx-ai/bible-mcp-server/issues"
+  },
+  "keywords": [
+    "bible",
+    "scripture",
+    "mcp",
+    "mcp-server",
+    "kjv",
+    "strongs",
+    "concordance",
+    "word-study",
+    "cross-references",
+    "theology",
+    "bible-study",
+    "hebrew",
+    "greek",
+    "naves",
+    "darby",
+    "translations"
+  ],
+  "author": "mctx-ai",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

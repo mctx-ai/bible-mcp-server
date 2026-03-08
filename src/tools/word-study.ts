@@ -346,6 +346,7 @@ async function buildOtherOccurrences(
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 wordStudy.description =
+  'Requires a known verse reference (book, chapter, verse). ' +
   'Perform an original language word study for a specific word in a Bible verse. ' +
   'Returns the Hebrew or Greek word, Strong\'s number, transliteration, definition, ' +
   'lexicon entry (BDB for Hebrew, Thayer for Greek), morphological parsing, and a ' +
