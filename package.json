@@ -1,6 +1,6 @@
 {
   "name": "bible",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Deep Bible study for MCP-compatible AI clients. 155,510 verses across 5 public domain translations (KJV, WEB, ASV, YLT, Darby). Semantic search via 155K+ vector embeddings. 606,140 cross-references. 17,543 Strong's concordance entries with Hebrew and Greek lexicon definitions. 447,734 morphology records for original-language word studies. 5,319 Nave's Topical Bible categories. Full-text search via FTS5. Every verse response includes a structured citation.",
   "homepage": "https://github.com/mctx-ai/bible-mcp-server",
   "repository": {
@@ -32,7 +32,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --minify --platform=node --format=esm --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --minify --platform=neutral --target=es2020 --format=esm --outfile=dist/index.js",
     "db:schema": "tsx scripts/create-schema.ts",
     "dev": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@mctx-ai/mcp-server --sourcemap && run-p dev:build dev:server",
     "dev:build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --external:@mctx-ai/mcp-server --watch --sourcemap",
