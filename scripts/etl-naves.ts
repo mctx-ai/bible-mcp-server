@@ -278,7 +278,7 @@ function parseEntryRefs(entry: string): VerseRef[] {
     // Strip leading subtopic label: "-Some label TEXT" or "See TOPIC"
     // The actual reference is usually a BOOK CHAPTER:VERSE pattern.
     // We look for tokens matching known book abbreviations or chapter:verse patterns.
-    const refParts = parseSegment(segment, currentBookId);
+    const refParts = parseSegment(segment);
 
     for (const part of refParts) {
       if (part.bookId !== null) {
@@ -309,7 +309,6 @@ interface ParsedPart {
  */
 function parseSegment(
   segment: string,
-  _inheritedBookId: number | null,
 ): ParsedPart[] {
   const parts: ParsedPart[] = [];
 
@@ -596,19 +595,29 @@ async function loadTopicVerses(
  * We only need distinct (book_id, chapter, verse) coordinates regardless of
  * translation, so we query against the KJV translation (id=1) to get the
  * canonical verse set.
+ *
+ * Fetches in pages to avoid hitting D1 REST response size limits (~31K rows).
  */
 async function fetchExistingVerses(): Promise<Set<string>> {
   log('Fetching existing verse coordinates from D1...');
 
-  const result = await d1.query(
-    'SELECT DISTINCT book_id, chapter, verse FROM verses WHERE translation_id = 1',
-    [],
-  );
-
   const verseSet = new Set<string>();
-  for (const row of result.results) {
-    const key = `${row['book_id']}:${row['chapter']}:${row['verse']}`;
-    verseSet.add(key);
+  const pageSize = 10000;
+  let offset = 0;
+
+  while (true) {
+    const result = await d1.query(
+      'SELECT book_id, chapter, verse FROM verses WHERE translation_id = 1 ORDER BY book_id, chapter, verse LIMIT ? OFFSET ?',
+      [pageSize, offset],
+    );
+
+    for (const row of result.results) {
+      const key = `${row['book_id']}:${row['chapter']}:${row['verse']}`;
+      verseSet.add(key);
+    }
+
+    if (result.results.length < pageSize) break;
+    offset += pageSize;
   }
 
   log(`  Loaded ${verseSet.size.toLocaleString()} verse coordinates`);

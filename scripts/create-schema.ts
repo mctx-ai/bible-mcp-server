@@ -102,7 +102,8 @@ const TABLE_STATEMENTS: Record<string, string> = {
       strongs_number TEXT NOT NULL,
       language       TEXT NOT NULL,
       short_def      TEXT,
-      long_def       TEXT
+      long_def       TEXT,
+      UNIQUE(strongs_number, language, short_def)
     )
   `,
 

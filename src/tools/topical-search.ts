@@ -98,7 +98,7 @@ async function searchNaves(
 
   for (const row of result.results) {
     const r = row as unknown as NaveVerseRow;
-    const key = `${r.book_name}:${r.chapter}:${r.verse}`;
+    const key = `${r.book_name.trim().toLowerCase()}:${r.chapter}:${r.verse}`;
 
     const citation: Citation = {
       book: r.book_name,
@@ -205,10 +205,11 @@ async function fetchVerseTexts(
     chunks.push(coords.slice(i, i + VERSE_CHUNK_SIZE));
   }
 
-  // Use d1.batch() for multiple chunks to minimise HTTP round-trips (single call).
-  // For a single chunk, d1.batch() still works correctly.
+  // Issue all chunk queries concurrently.
   const statements = chunks.map(buildVerseChunkStatement);
-  const resultSets = await d1.batch(statements);
+  const resultSets = await Promise.all(
+    statements.map((stmt) => d1.query(stmt.sql, stmt.params))
+  );
 
   const verseMap = new Map<string, VerseRow>();
 
@@ -229,7 +230,8 @@ async function fetchVerseTexts(
 const topicalSearch: ToolHandler = async (args, _ask?) => {
   await ensureInitialized();
 
-  const { topic, limit } = args as { topic: string; limit: number };
+  const { topic, limit: limitArg } = args as { topic: string; limit?: number };
+  const limit = Math.min(Math.max(limitArg ?? 20, 1), 50);
 
   // Run Nave's D1 query and Vectorize semantic search concurrently.
   // Chain fetchVerseTexts off the semantic search promise so it starts as soon
@@ -256,7 +258,7 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
     const verseRow = semanticVerseMap.get(coordKey);
     if (!verseRow) continue;
 
-    const unifiedKey = `${verseRow.book_name}:${verseRow.chapter}:${verseRow.verse}`;
+    const unifiedKey = `${verseRow.book_name.trim().toLowerCase()}:${verseRow.chapter}:${verseRow.verse}`;
 
     if (unified.has(unifiedKey)) {
       // Already in results from Nave's — mark as 'both', preserve Nave's note.

@@ -68,333 +68,333 @@ const BOOKS: BookDef[] = [
   {
     id: 1, abbreviation: 'Gen', name: 'Genesis', testament: 'OT',
     csvNames: ['Genesis'],
-    aliases: ['Genesis', 'Gen', 'gen', 'Ge', 'ge', 'Gn', 'gn'],
+    aliases: ['Gen', 'gen', 'Ge', 'ge', 'Gn', 'gn'],
   },
   {
     id: 2, abbreviation: 'Exod', name: 'Exodus', testament: 'OT',
     csvNames: ['Exodus'],
-    aliases: ['Exodus', 'Exod', 'exod', 'Ex', 'ex', 'Exo', 'exo'],
+    aliases: ['Exod', 'exod', 'Ex', 'ex', 'Exo', 'exo'],
   },
   {
     id: 3, abbreviation: 'Lev', name: 'Leviticus', testament: 'OT',
     csvNames: ['Leviticus'],
-    aliases: ['Leviticus', 'Lev', 'lev', 'Le', 'le', 'Lv', 'lv'],
+    aliases: ['Lev', 'lev', 'Le', 'le', 'Lv', 'lv'],
   },
   {
     id: 4, abbreviation: 'Num', name: 'Numbers', testament: 'OT',
     csvNames: ['Numbers'],
-    aliases: ['Numbers', 'Num', 'num', 'Nu', 'nu', 'Nm', 'nm'],
+    aliases: ['Num', 'num', 'Nu', 'nu', 'Nm', 'nm'],
   },
   {
     id: 5, abbreviation: 'Deut', name: 'Deuteronomy', testament: 'OT',
     csvNames: ['Deuteronomy'],
-    aliases: ['Deuteronomy', 'Deut', 'deut', 'Dt', 'dt', 'De', 'de', 'Deu', 'deu'],
+    aliases: ['Deut', 'deut', 'Dt', 'dt', 'De', 'de', 'Deu', 'deu'],
   },
   {
     id: 6, abbreviation: 'Josh', name: 'Joshua', testament: 'OT',
     csvNames: ['Joshua'],
-    aliases: ['Joshua', 'Josh', 'josh', 'Jos', 'jos', 'Jsh', 'jsh'],
+    aliases: ['Josh', 'josh', 'Jos', 'jos', 'Jsh', 'jsh'],
   },
   {
     id: 7, abbreviation: 'Judg', name: 'Judges', testament: 'OT',
     csvNames: ['Judges'],
-    aliases: ['Judges', 'Judg', 'judg', 'Jdg', 'jdg', 'Jg', 'jg'],
+    aliases: ['Judg', 'judg', 'Jdg', 'jdg', 'Jg', 'jg'],
   },
   {
     id: 8, abbreviation: 'Ruth', name: 'Ruth', testament: 'OT',
     csvNames: ['Ruth'],
-    aliases: ['Ruth', 'ruth', 'Ru', 'ru', 'Rth', 'rth'],
+    aliases: ['ruth', 'Ru', 'ru', 'Rth', 'rth'],
   },
   {
     id: 9, abbreviation: '1Sam', name: '1 Samuel', testament: 'OT',
     csvNames: ['1 Samuel', '1Samuel', 'I Samuel'],
-    aliases: ['1 Samuel', '1Samuel', '1Sam', '1sam', '1Sa', '1sa', '1 Sam', '1s', 'I Samuel'],
+    aliases: ['1Samuel', '1Sam', '1sam', '1Sa', '1sa', '1 Sam', '1s', 'I Samuel'],
   },
   {
     id: 10, abbreviation: '2Sam', name: '2 Samuel', testament: 'OT',
     csvNames: ['2 Samuel', '2Samuel', 'II Samuel'],
-    aliases: ['2 Samuel', '2Samuel', '2Sam', '2sam', '2Sa', '2sa', '2 Sam', 'II Samuel'],
+    aliases: ['2Samuel', '2Sam', '2sam', '2Sa', '2sa', '2 Sam', 'II Samuel'],
   },
   {
     id: 11, abbreviation: '1Kgs', name: '1 Kings', testament: 'OT',
     csvNames: ['1 Kings', '1Kings', 'I Kings'],
-    aliases: ['1 Kings', '1Kings', '1Kgs', '1kgs', '1Ki', '1ki', '1Kg', '1 Kgs', 'I Kings'],
+    aliases: ['1Kings', '1Kgs', '1kgs', '1Ki', '1ki', '1Kg', '1 Kgs', 'I Kings'],
   },
   {
     id: 12, abbreviation: '2Kgs', name: '2 Kings', testament: 'OT',
     csvNames: ['2 Kings', '2Kings', 'II Kings'],
-    aliases: ['2 Kings', '2Kings', '2Kgs', '2kgs', '2Ki', '2ki', '2Kg', '2 Kgs', 'II Kings'],
+    aliases: ['2Kings', '2Kgs', '2kgs', '2Ki', '2ki', '2Kg', '2 Kgs', 'II Kings'],
   },
   {
     id: 13, abbreviation: '1Chr', name: '1 Chronicles', testament: 'OT',
     csvNames: ['1 Chronicles', '1Chronicles', 'I Chronicles'],
-    aliases: ['1 Chronicles', '1Chronicles', '1Chr', '1chr', '1Ch', '1ch', '1 Chr', 'I Chronicles'],
+    aliases: ['1Chronicles', '1Chr', '1chr', '1Ch', '1ch', '1 Chr', 'I Chronicles'],
   },
   {
     id: 14, abbreviation: '2Chr', name: '2 Chronicles', testament: 'OT',
     csvNames: ['2 Chronicles', '2Chronicles', 'II Chronicles'],
-    aliases: ['2 Chronicles', '2Chronicles', '2Chr', '2chr', '2Ch', '2ch', '2 Chr', 'II Chronicles'],
+    aliases: ['2Chronicles', '2Chr', '2chr', '2Ch', '2ch', '2 Chr', 'II Chronicles'],
   },
   {
     id: 15, abbreviation: 'Ezra', name: 'Ezra', testament: 'OT',
     csvNames: ['Ezra'],
-    aliases: ['Ezra', 'ezra', 'Ezr', 'ezr'],
+    aliases: ['ezra', 'Ezr', 'ezr'],
   },
   {
     id: 16, abbreviation: 'Neh', name: 'Nehemiah', testament: 'OT',
     csvNames: ['Nehemiah'],
-    aliases: ['Nehemiah', 'Neh', 'neh', 'Ne', 'ne'],
+    aliases: ['Neh', 'neh', 'Ne', 'ne'],
   },
   {
     id: 17, abbreviation: 'Esth', name: 'Esther', testament: 'OT',
     csvNames: ['Esther'],
-    aliases: ['Esther', 'Esth', 'esth', 'Es', 'es', 'Est', 'est'],
+    aliases: ['Esth', 'esth', 'Es', 'es', 'Est', 'est'],
   },
   {
     id: 18, abbreviation: 'Job', name: 'Job', testament: 'OT',
     csvNames: ['Job'],
-    aliases: ['Job', 'job', 'Jb', 'jb'],
+    aliases: ['job', 'Jb', 'jb'],
   },
   {
     id: 19, abbreviation: 'Ps', name: 'Psalms', testament: 'OT',
     csvNames: ['Psalms', 'Psalm'],
-    aliases: ['Psalms', 'Psalm', 'Ps', 'ps', 'Psa', 'psa', 'Pss'],
+    aliases: ['Psalm', 'Ps', 'ps', 'Psa', 'psa', 'Pss'],
   },
   {
     id: 20, abbreviation: 'Prov', name: 'Proverbs', testament: 'OT',
     csvNames: ['Proverbs'],
-    aliases: ['Proverbs', 'Prov', 'prov', 'Pr', 'pr', 'Pro', 'pro'],
+    aliases: ['Prov', 'prov', 'Pr', 'pr', 'Pro', 'pro'],
   },
   {
     id: 21, abbreviation: 'Eccl', name: 'Ecclesiastes', testament: 'OT',
     csvNames: ['Ecclesiastes'],
-    aliases: ['Ecclesiastes', 'Eccl', 'eccl', 'Ec', 'ec', 'Ecc', 'ecc', 'Qoh'],
+    aliases: ['Eccl', 'eccl', 'Ec', 'ec', 'Ecc', 'ecc', 'Qoh'],
   },
   {
     id: 22, abbreviation: 'Song', name: 'Song of Solomon', testament: 'OT',
     csvNames: ['Song of Solomon', 'Song of Songs'],
-    aliases: ['Song of Solomon', 'Song of Songs', 'Song', 'song', 'SoS', 'sos', 'SS', 'Cant'],
+    aliases: ['Song of Songs', 'Song', 'song', 'SoS', 'sos', 'SS', 'Cant'],
   },
   {
     id: 23, abbreviation: 'Isa', name: 'Isaiah', testament: 'OT',
     csvNames: ['Isaiah'],
-    aliases: ['Isaiah', 'Isa', 'isa', 'Is', 'is'],
+    aliases: ['Isa', 'isa', 'Is', 'is'],
   },
   {
     id: 24, abbreviation: 'Jer', name: 'Jeremiah', testament: 'OT',
     csvNames: ['Jeremiah'],
-    aliases: ['Jeremiah', 'Jer', 'jer', 'Je', 'je', 'Jr', 'jr'],
+    aliases: ['Jer', 'jer', 'Je', 'je', 'Jr', 'jr'],
   },
   {
     id: 25, abbreviation: 'Lam', name: 'Lamentations', testament: 'OT',
     csvNames: ['Lamentations'],
-    aliases: ['Lamentations', 'Lam', 'lam', 'La', 'la'],
+    aliases: ['Lam', 'lam', 'La', 'la'],
   },
   {
     id: 26, abbreviation: 'Ezek', name: 'Ezekiel', testament: 'OT',
     csvNames: ['Ezekiel'],
-    aliases: ['Ezekiel', 'Ezek', 'ezek', 'Eze', 'eze', 'Ezk', 'ezk'],
+    aliases: ['Ezek', 'ezek', 'Eze', 'eze', 'Ezk', 'ezk'],
   },
   {
     id: 27, abbreviation: 'Dan', name: 'Daniel', testament: 'OT',
     csvNames: ['Daniel'],
-    aliases: ['Daniel', 'Dan', 'dan', 'Da', 'da', 'Dn', 'dn'],
+    aliases: ['Dan', 'dan', 'Da', 'da', 'Dn', 'dn'],
   },
   {
     id: 28, abbreviation: 'Hos', name: 'Hosea', testament: 'OT',
     csvNames: ['Hosea'],
-    aliases: ['Hosea', 'Hos', 'hos', 'Ho', 'ho'],
+    aliases: ['Hos', 'hos', 'Ho', 'ho'],
   },
   {
     id: 29, abbreviation: 'Joel', name: 'Joel', testament: 'OT',
     csvNames: ['Joel'],
-    aliases: ['Joel', 'joel', 'Joe', 'joe', 'Jl', 'jl'],
+    aliases: ['joel', 'Joe', 'joe', 'Jl', 'jl'],
   },
   {
     id: 30, abbreviation: 'Amos', name: 'Amos', testament: 'OT',
     csvNames: ['Amos'],
-    aliases: ['Amos', 'amos', 'Am', 'am'],
+    aliases: ['amos', 'Am', 'am'],
   },
   {
     id: 31, abbreviation: 'Obad', name: 'Obadiah', testament: 'OT',
     csvNames: ['Obadiah'],
-    aliases: ['Obadiah', 'Obad', 'obad', 'Ob', 'ob', 'Oba', 'oba'],
+    aliases: ['Obad', 'obad', 'Ob', 'ob', 'Oba', 'oba'],
   },
   {
     id: 32, abbreviation: 'Jonah', name: 'Jonah', testament: 'OT',
     csvNames: ['Jonah'],
-    aliases: ['Jonah', 'jonah', 'Jon', 'jon', 'Jnh', 'jnh'],
+    aliases: ['jonah', 'Jon', 'jon', 'Jnh', 'jnh'],
   },
   {
     id: 33, abbreviation: 'Mic', name: 'Micah', testament: 'OT',
     csvNames: ['Micah'],
-    aliases: ['Micah', 'Mic', 'mic', 'Mi', 'mi'],
+    aliases: ['Mic', 'mic', 'Mi', 'mi'],
   },
   {
     id: 34, abbreviation: 'Nah', name: 'Nahum', testament: 'OT',
     csvNames: ['Nahum'],
-    aliases: ['Nahum', 'Nah', 'nah', 'Na', 'na'],
+    aliases: ['Nah', 'nah', 'Na', 'na'],
   },
   {
     id: 35, abbreviation: 'Hab', name: 'Habakkuk', testament: 'OT',
     csvNames: ['Habakkuk'],
-    aliases: ['Habakkuk', 'Hab', 'hab', 'Hb', 'hb'],
+    aliases: ['Hab', 'hab', 'Hb', 'hb'],
   },
   {
     id: 36, abbreviation: 'Zeph', name: 'Zephaniah', testament: 'OT',
     csvNames: ['Zephaniah'],
-    aliases: ['Zephaniah', 'Zeph', 'zeph', 'Zep', 'zep', 'Zp', 'zp'],
+    aliases: ['Zeph', 'zeph', 'Zep', 'zep', 'Zp', 'zp'],
   },
   {
     id: 37, abbreviation: 'Hag', name: 'Haggai', testament: 'OT',
     csvNames: ['Haggai'],
-    aliases: ['Haggai', 'Hag', 'hag', 'Hg', 'hg'],
+    aliases: ['Hag', 'hag', 'Hg', 'hg'],
   },
   {
     id: 38, abbreviation: 'Zech', name: 'Zechariah', testament: 'OT',
     csvNames: ['Zechariah'],
-    aliases: ['Zechariah', 'Zech', 'zech', 'Zec', 'zec', 'Zc', 'zc'],
+    aliases: ['Zech', 'zech', 'Zec', 'zec', 'Zc', 'zc'],
   },
   {
     id: 39, abbreviation: 'Mal', name: 'Malachi', testament: 'OT',
     csvNames: ['Malachi'],
-    aliases: ['Malachi', 'Mal', 'mal', 'Ml', 'ml'],
+    aliases: ['Mal', 'mal', 'Ml', 'ml'],
   },
   // New Testament
   {
     id: 40, abbreviation: 'Matt', name: 'Matthew', testament: 'NT',
     csvNames: ['Matthew'],
-    aliases: ['Matthew', 'Matt', 'matt', 'Mt', 'mt', 'Mat', 'mat'],
+    aliases: ['Matt', 'matt', 'Mt', 'mt', 'Mat', 'mat'],
   },
   {
     id: 41, abbreviation: 'Mark', name: 'Mark', testament: 'NT',
     csvNames: ['Mark'],
-    aliases: ['Mark', 'mark', 'Mk', 'mk', 'Mr', 'mr'],
+    aliases: ['mark', 'Mk', 'mk', 'Mr', 'mr'],
   },
   {
     id: 42, abbreviation: 'Luke', name: 'Luke', testament: 'NT',
     csvNames: ['Luke'],
-    aliases: ['Luke', 'luke', 'Lk', 'lk', 'Lu', 'lu'],
+    aliases: ['luke', 'Lk', 'lk', 'Lu', 'lu'],
   },
   {
     id: 43, abbreviation: 'John', name: 'John', testament: 'NT',
     csvNames: ['John'],
-    aliases: ['John', 'john', 'Jn', 'jn', 'Joh', 'joh'],
+    aliases: ['john', 'Jn', 'jn', 'Joh', 'joh'],
   },
   {
     id: 44, abbreviation: 'Acts', name: 'Acts', testament: 'NT',
     csvNames: ['Acts'],
-    aliases: ['Acts', 'acts', 'Ac', 'ac', 'Act', 'act'],
+    aliases: ['acts', 'Ac', 'ac', 'Act', 'act'],
   },
   {
     id: 45, abbreviation: 'Rom', name: 'Romans', testament: 'NT',
     csvNames: ['Romans'],
-    aliases: ['Romans', 'Rom', 'rom', 'Ro', 'ro', 'Rm', 'rm'],
+    aliases: ['Rom', 'rom', 'Ro', 'ro', 'Rm', 'rm'],
   },
   {
     id: 46, abbreviation: '1Cor', name: '1 Corinthians', testament: 'NT',
     csvNames: ['1 Corinthians', '1Corinthians', 'I Corinthians'],
-    aliases: ['1 Corinthians', '1Corinthians', '1Cor', '1cor', '1Co', '1co', '1 Cor', 'I Corinthians'],
+    aliases: ['1Corinthians', '1Cor', '1cor', '1Co', '1co', '1 Cor', 'I Corinthians'],
   },
   {
     id: 47, abbreviation: '2Cor', name: '2 Corinthians', testament: 'NT',
     csvNames: ['2 Corinthians', '2Corinthians', 'II Corinthians'],
-    aliases: ['2 Corinthians', '2Corinthians', '2Cor', '2cor', '2Co', '2co', '2 Cor', 'II Corinthians'],
+    aliases: ['2Corinthians', '2Cor', '2cor', '2Co', '2co', '2 Cor', 'II Corinthians'],
   },
   {
     id: 48, abbreviation: 'Gal', name: 'Galatians', testament: 'NT',
     csvNames: ['Galatians'],
-    aliases: ['Galatians', 'Gal', 'gal', 'Ga', 'ga'],
+    aliases: ['Gal', 'gal', 'Ga', 'ga'],
   },
   {
     id: 49, abbreviation: 'Eph', name: 'Ephesians', testament: 'NT',
     csvNames: ['Ephesians'],
-    aliases: ['Ephesians', 'Eph', 'eph', 'Ep', 'ep'],
+    aliases: ['Eph', 'eph', 'Ep', 'ep'],
   },
   {
     id: 50, abbreviation: 'Phil', name: 'Philippians', testament: 'NT',
     csvNames: ['Philippians'],
-    aliases: ['Philippians', 'Phil', 'phil', 'Php', 'php', 'Pp', 'pp'],
+    aliases: ['Phil', 'phil', 'Php', 'php', 'Pp', 'pp'],
   },
   {
     id: 51, abbreviation: 'Col', name: 'Colossians', testament: 'NT',
     csvNames: ['Colossians'],
-    aliases: ['Colossians', 'Col', 'col', 'Co', 'co'],
+    aliases: ['Col', 'col', 'Co', 'co'],
   },
   {
     id: 52, abbreviation: '1Thess', name: '1 Thessalonians', testament: 'NT',
     csvNames: ['1 Thessalonians', '1Thessalonians', 'I Thessalonians'],
-    aliases: ['1 Thessalonians', '1Thessalonians', '1Thess', '1thess', '1Th', '1th', '1 Thess', 'I Thessalonians'],
+    aliases: ['1Thessalonians', '1Thess', '1thess', '1Th', '1th', '1 Thess', 'I Thessalonians'],
   },
   {
     id: 53, abbreviation: '2Thess', name: '2 Thessalonians', testament: 'NT',
     csvNames: ['2 Thessalonians', '2Thessalonians', 'II Thessalonians'],
-    aliases: ['2 Thessalonians', '2Thessalonians', '2Thess', '2thess', '2Th', '2th', '2 Thess', 'II Thessalonians'],
+    aliases: ['2Thessalonians', '2Thess', '2thess', '2Th', '2th', '2 Thess', 'II Thessalonians'],
   },
   {
     id: 54, abbreviation: '1Tim', name: '1 Timothy', testament: 'NT',
     csvNames: ['1 Timothy', '1Timothy', 'I Timothy'],
-    aliases: ['1 Timothy', '1Timothy', '1Tim', '1tim', '1Ti', '1ti', '1 Tim', 'I Timothy'],
+    aliases: ['1Timothy', '1Tim', '1tim', '1Ti', '1ti', '1 Tim', 'I Timothy'],
   },
   {
     id: 55, abbreviation: '2Tim', name: '2 Timothy', testament: 'NT',
     csvNames: ['2 Timothy', '2Timothy', 'II Timothy'],
-    aliases: ['2 Timothy', '2Timothy', '2Tim', '2tim', '2Ti', '2ti', '2 Tim', 'II Timothy'],
+    aliases: ['2Timothy', '2Tim', '2tim', '2Ti', '2ti', '2 Tim', 'II Timothy'],
   },
   {
     id: 56, abbreviation: 'Titus', name: 'Titus', testament: 'NT',
     csvNames: ['Titus'],
-    aliases: ['Titus', 'titus', 'Tit', 'tit', 'Ti', 'ti'],
+    aliases: ['titus', 'Tit', 'tit', 'Ti', 'ti'],
   },
   {
     id: 57, abbreviation: 'Phlm', name: 'Philemon', testament: 'NT',
     csvNames: ['Philemon'],
-    aliases: ['Philemon', 'Phlm', 'phlm', 'Phm', 'phm', 'Pm', 'pm'],
+    aliases: ['Phlm', 'phlm', 'Phm', 'phm', 'Pm', 'pm'],
   },
   {
     id: 58, abbreviation: 'Heb', name: 'Hebrews', testament: 'NT',
     csvNames: ['Hebrews'],
-    aliases: ['Hebrews', 'Heb', 'heb', 'He', 'he'],
+    aliases: ['Heb', 'heb', 'He', 'he'],
   },
   {
     id: 59, abbreviation: 'Jas', name: 'James', testament: 'NT',
     csvNames: ['James'],
-    aliases: ['James', 'Jas', 'jas', 'Ja', 'ja', 'Jms'],
+    aliases: ['Jas', 'jas', 'Ja', 'ja', 'Jms'],
   },
   {
     id: 60, abbreviation: '1Pet', name: '1 Peter', testament: 'NT',
     csvNames: ['1 Peter', '1Peter', 'I Peter'],
-    aliases: ['1 Peter', '1Peter', '1Pet', '1pet', '1Pe', '1pe', '1 Pet', '1Pt', 'I Peter'],
+    aliases: ['1Peter', '1Pet', '1pet', '1Pe', '1pe', '1 Pet', '1Pt', 'I Peter'],
   },
   {
     id: 61, abbreviation: '2Pet', name: '2 Peter', testament: 'NT',
     csvNames: ['2 Peter', '2Peter', 'II Peter'],
-    aliases: ['2 Peter', '2Peter', '2Pet', '2pet', '2Pe', '2pe', '2 Pet', '2Pt', 'II Peter'],
+    aliases: ['2Peter', '2Pet', '2pet', '2Pe', '2pe', '2 Pet', '2Pt', 'II Peter'],
   },
   {
     id: 62, abbreviation: '1John', name: '1 John', testament: 'NT',
     csvNames: ['1 John', '1John', 'I John'],
-    aliases: ['1 John', '1John', '1Jn', '1jn', '1Jo', '1jo', '1 John', 'I John'],
+    aliases: ['1John', '1Jn', '1jn', '1Jo', '1jo', 'I John'],
   },
   {
     id: 63, abbreviation: '2John', name: '2 John', testament: 'NT',
     csvNames: ['2 John', '2John', 'II John'],
-    aliases: ['2 John', '2John', '2Jn', '2jn', '2Jo', '2jo', '2 John', 'II John'],
+    aliases: ['2John', '2Jn', '2jn', '2Jo', '2jo', 'II John'],
   },
   {
     id: 64, abbreviation: '3John', name: '3 John', testament: 'NT',
     csvNames: ['3 John', '3John', 'III John'],
-    aliases: ['3 John', '3John', '3Jn', '3jn', '3Jo', '3jo', '3 John', 'III John'],
+    aliases: ['3John', '3Jn', '3jn', '3Jo', '3jo', 'III John'],
   },
   {
     id: 65, abbreviation: 'Jude', name: 'Jude', testament: 'NT',
     csvNames: ['Jude'],
-    aliases: ['Jude', 'jude', 'Jud', 'jud'],
+    aliases: ['jude', 'Jud', 'jud'],
   },
   {
     id: 66, abbreviation: 'Rev', name: 'Revelation', testament: 'NT',
     csvNames: ['Revelation', 'Revelation of John'],
-    aliases: ['Revelation', 'Rev', 'rev', 'Re', 're', 'Rv', 'rv', 'Apoc', 'Revelation of John'],
+    aliases: ['Rev', 'rev', 'Re', 're', 'Rv', 'rv', 'Apoc', 'Revelation of John'],
   },
 ];
 
@@ -571,7 +571,6 @@ async function loadVerses(
   log(`  Parsed ${verses.length} verses`);
 
   let skipped = 0;
-  let remapped = 0;
   const rows: unknown[][] = [];
 
   for (const v of verses) {
@@ -588,7 +587,6 @@ async function loadVerses(
         skipped++;
         continue;
       }
-      remapped++; // counts verses that matched (we log true remaps only on mismatch)
     }
 
     rows.push([v.bookId, v.chapter, v.verse, translation.id, v.text]);

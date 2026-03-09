@@ -76,8 +76,8 @@ export function inlineParams(sql: string, params: unknown[]): string {
     return sqlLiteral(params[paramIndex++]);
   });
   if (paramIndex < params.length) {
-    process.stderr.write(
-      `[cloudflare-etl] inlineParams: ${params.length - paramIndex} extra param(s) unused for SQL: ${sql}\n`
+    console.warn(
+      `[cloudflare-etl] inlineParams: ${params.length - paramIndex} extra param(s) unused for SQL: ${sql}`
     );
   }
   return result;

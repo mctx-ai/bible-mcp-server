@@ -98,6 +98,31 @@ function log(msg: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Retry with exponential backoff
+// ---------------------------------------------------------------------------
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  maxAttempts = 4,
+  baseDelayMs = 1000,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxAttempts) break;
+      const delayMs = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 200;
+      log(`  [retry] ${label} attempt ${attempt} failed — retrying in ${Math.round(delayMs)}ms`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
+
+// ---------------------------------------------------------------------------
 // Vectorize management API helpers
 // (Control-plane operations not covered by the cloudflare.ts data-plane client)
 // ---------------------------------------------------------------------------
@@ -262,7 +287,7 @@ async function fetchVerses(translationId: number): Promise<VerseRow[]> {
     [translationId]
   );
 
-  return result.results as VerseRow[];
+  return result.results as unknown as VerseRow[];
 }
 
 // ---------------------------------------------------------------------------
@@ -283,7 +308,10 @@ async function ingestTranslation(translation: TranslationMeta): Promise<void> {
     const batch = verses.slice(i, i + EMBED_BATCH_SIZE);
     const texts = batch.map((v) => v.text);
 
-    const embeddings = await workersAi.embed(texts, EMBED_MODEL);
+    const embeddings = await withRetry(
+      () => workersAi.embed(texts, EMBED_MODEL),
+      `embed batch ${i / EMBED_BATCH_SIZE + 1}`,
+    );
 
     for (let j = 0; j < batch.length; j++) {
       const v = batch[j];
@@ -303,7 +331,7 @@ async function ingestTranslation(translation: TranslationMeta): Promise<void> {
 
       // Flush when upsert batch is full
       if (pendingVectors.length >= UPSERT_BATCH_SIZE) {
-        await upsertVectors(pendingVectors);
+        await withRetry(() => upsertVectors(pendingVectors), `upsert batch at offset ${i}`);
         totalUpserted += pendingVectors.length;
         pendingVectors = [];
 
@@ -317,7 +345,7 @@ async function ingestTranslation(translation: TranslationMeta): Promise<void> {
 
   // Flush remainder
   if (pendingVectors.length > 0) {
-    await upsertVectors(pendingVectors);
+    await withRetry(() => upsertVectors(pendingVectors), `upsert final batch`);
     totalUpserted += pendingVectors.length;
   }
 

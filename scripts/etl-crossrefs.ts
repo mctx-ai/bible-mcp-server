@@ -388,10 +388,11 @@ async function buildVerseSet(): Promise<Set<string>> {
 
 interface EtlStats {
   totalPairs: number;
-  rangesExpanded: number;     // number of pairs that were ranges (not single verses)
-  danglingSkipped: number;    // verses not found in the verses table
-  bookNotFound: number;       // references where book abbreviation couldn't be resolved
-  insertedRows: number;       // rows successfully queued for INSERT
+  rangesExpanded: number;          // number of pairs that were ranges (not single verses)
+  danglingSkipped: number;         // TO verses not found in the verses table
+  fromDanglingSkipped: number;     // FROM verses not found in the verses table
+  bookNotFound: number;            // references where book abbreviation couldn't be resolved
+  insertedRows: number;            // rows successfully queued for INSERT
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +557,7 @@ async function main(): Promise<void> {
     totalPairs: rawRefs.length,
     rangesExpanded: 0,
     danglingSkipped: 0,
+    fromDanglingSkipped: 0,
     bookNotFound: 0,
     insertedRows: 0,
   };
@@ -579,6 +581,13 @@ async function main(): Promise<void> {
     if (fromBookId === null) {
       warn(`Unknown from-book abbreviation: "${fromRef.bookAbbr}" (${raw.fromVerse})`);
       stats.bookNotFound++;
+      continue;
+    }
+
+    // Validate that the source verse exists in the verses table
+    const fromVerseKey = `${fromBookId}:${fromRef.chapter}:${fromRef.verse}`;
+    if (!verseSet.has(fromVerseKey)) {
+      stats.fromDanglingSkipped++;
       continue;
     }
 
@@ -623,7 +632,8 @@ async function main(): Promise<void> {
     `\n  Total raw pairs:      ${stats.totalPairs.toLocaleString()}` +
     `\n  Ranges expanded:      ${stats.rangesExpanded.toLocaleString()} pairs were ranges` +
     `\n  Book not found:       ${stats.bookNotFound.toLocaleString()} (skipped)` +
-    `\n  Dangling refs:        ${stats.danglingSkipped.toLocaleString()} (target verse not in verses table)` +
+    `\n  From dangling:        ${stats.fromDanglingSkipped.toLocaleString()} (source verse not in verses table)` +
+    `\n  To dangling:          ${stats.danglingSkipped.toLocaleString()} (target verse not in verses table)` +
     `\n  Rows to insert:       ${stats.insertedRows.toLocaleString()}`,
   );
 
