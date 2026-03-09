@@ -154,7 +154,7 @@ export const d1 = {
 
 async function vectorizeQuery(
   vector: number[],
-  options?: { topK?: number; filter?: Record<string, string> }
+  options?: { topK?: number; filter?: Record<string, string | number> }
 ): Promise<VectorizeMatch[]> {
   const { accountId, indexName } = getConfig();
   const vectorizeBase = `${BASE}/accounts/${accountId}/vectorize/v2/indexes/${indexName}`;

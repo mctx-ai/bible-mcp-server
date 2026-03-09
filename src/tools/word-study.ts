@@ -57,6 +57,7 @@ interface WordStudyResult {
   other_occurrences: OtherOccurrence[];
   total_occurrences: number;
   citation: Citation;
+  note?: string;
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -92,9 +93,11 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
   }
   const resolvedBook = validation.book;
 
-  // 2. Query all morphology rows for this verse, joined with strongs definitions.
-  //    The strongs JOIN provides English gloss/definition fields so that
-  //    matchByEnglishGloss can match without positional alignment.
+  // 2. Query all morphology rows for this verse, joined with strongs definitions
+  //    and lexicon_entries. The strongs JOIN provides English gloss/definition
+  //    fields and the lexicon_entries JOIN provides short_def/long_def so that
+  //    matchByEnglishGloss can match broader English definitions without
+  //    positional alignment.
   //    Morphology rows use translation_id 6 (Hebrew/TAHOT) or 7 (Greek/TAGNT).
   const morphResult = await d1.query(
     `SELECT
@@ -104,9 +107,12 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
        m.lemma,
        m.parsing,
        m.translation_id,
-       s.definition AS strongs_definition
+       s.definition AS strongs_definition,
+       le.short_def AS lexicon_short_def,
+       le.long_def AS lexicon_long_def
      FROM morphology m
      LEFT JOIN strongs s ON s.prefixed_number = m.strongs_number
+     LEFT JOIN lexicon_entries le ON le.strongs_number = m.strongs_number
      WHERE m.book_id = ? AND m.chapter = ? AND m.verse = ?
      ORDER BY m.word_position`,
     [resolvedBook.id, chapter, verse]
@@ -152,12 +158,52 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
   }
 
   // 4. Extract strongs_number from matched morphology row.
+  //    Hebrew particles, prefixes, and grammatical markers (definite article he,
+  //    conjunctive waw, prepositions beth/kaph/lamed) have null strongs_number.
+  //    In that case, return partial results with an explanatory note rather than
+  //    throwing, and attempt to find adjacent morphology rows with a valid number.
   const strongsNumber = matchedRow['strongs_number'] as string | null;
   if (!strongsNumber) {
-    throw new Error(
-      `No Strong's number found for word at position ${matchedRow['word_position']} ` +
-        `in ${resolvedBook.name} ${chapter}:${verse}.`
+    const position = matchedRow['word_position'];
+    const sourceCitation = makeCitation(resolvedBook, chapter, verse, 'ORIG');
+
+    // Search adjacent morphology rows in the same verse for a valid strongs_number.
+    const adjacentRow = morphResult.results.find(
+      (row) =>
+        row['word_position'] !== position &&
+        typeof row['strongs_number'] === 'string' &&
+        (row['strongs_number'] as string).length > 0
     );
+
+    const note =
+      `Word at position ${position} in ${resolvedBook.name} ${chapter}:${verse} ` +
+      `is a grammatical particle, prefix, or article (e.g. definite article, ` +
+      `conjunctive waw, or prepositional prefix) that does not carry an ` +
+      `independent Strong's number. ` +
+      (adjacentRow
+        ? `The nearest word with a Strong's number is at position ` +
+          `${adjacentRow['word_position']} (${adjacentRow['strongs_number']}). ` +
+          `Try word_study again with that position for a full result.`
+        : `No adjacent words with a Strong's number were found in this verse.`);
+
+    const partialResult: WordStudyResult = {
+      original_word: (matchedRow['lemma'] as string) ?? '',
+      strongs_number: '',
+      transliteration: '',
+      definition: '',
+      lexicon: { short_def: '', long_def: '' },
+      morphology: {
+        lemma: (matchedRow['lemma'] as string) ?? '',
+        parsing: (matchedRow['parsing'] as string) ?? '',
+      },
+      matched_count: matchedCount,
+      other_occurrences: [],
+      total_occurrences: 0,
+      citation: sourceCitation,
+      note,
+    };
+
+    return partialResult;
   }
 
   // 5–8. Batch all remaining queries.
@@ -292,12 +338,13 @@ function matchByPosition(
 }
 
 /**
- * Match an English word against the Strong's definition glosses attached to
- * each morphology row.
+ * Match an English word against the Strong's definition glosses and lexicon
+ * definitions attached to each morphology row.
  *
- * Each morphology row was joined with the strongs table in the initial query,
- * providing a strongs_definition field (the English gloss). We match the
- * user's word as a whole-word, case-insensitive substring of that gloss.
+ * Each morphology row was joined with the strongs table and lexicon_entries in
+ * the initial query, providing strongs_definition (the English gloss),
+ * lexicon_short_def, and lexicon_long_def. We match the user's word as a
+ * whole-word, case-insensitive substring across all three fields.
  *
  * Falls back to matching against the lemma field (which may contain an
  * English gloss for rows without a Strong's entry).
@@ -313,14 +360,22 @@ function matchByEnglishGloss(
   // Build a word-boundary regex so 'sin' doesn't match 'since'.
   const wordBoundaryRe = new RegExp(`\\b${escapeRegex(target)}\\b`, 'i');
 
-  // First pass: exact word-boundary match against Strong's definition gloss.
-  const glossMatches = morphRows.filter((row) => {
-    const def = row['strongs_definition'];
-    if (typeof def === 'string' && def.length > 0) {
-      return wordBoundaryRe.test(def);
-    }
-    return false;
-  });
+  /**
+   * Test whether any of the definition fields on a morphology row match the
+   * word-boundary regex. Checks strongs_definition, lexicon_short_def, and
+   * lexicon_long_def so that words like "LORD" (gloss) and "Yahweh" (long_def)
+   * or inflected forms like "loved"/"love" (long_def expansions) are all reachable.
+   */
+  function matchesDefinitionFields(row: Record<string, unknown>): boolean {
+    const fields = ['strongs_definition', 'lexicon_short_def', 'lexicon_long_def'];
+    return fields.some((field) => {
+      const val = row[field];
+      return typeof val === 'string' && val.length > 0 && wordBoundaryRe.test(val);
+    });
+  }
+
+  // First pass: word-boundary match against Strong's gloss and lexicon defs.
+  const glossMatches = morphRows.filter(matchesDefinitionFields);
   if (glossMatches.length > 0) {
     return { first: glossMatches[0], count: glossMatches.length };
   }
@@ -338,16 +393,16 @@ function matchByEnglishGloss(
     return { first: lemmaMatches[0], count: lemmaMatches.length };
   }
 
-  // Third pass: substring match against Strong's definition (broader fallback).
+  // Third pass: substring match against all definition fields (broader fallback).
   // Guard: only attempt substring matching for inputs of 3+ characters to
   // prevent false positives from short words (e.g. 'in' matching 'beginning').
   if (target.length >= 3) {
     const substringMatches = morphRows.filter((row) => {
-      const def = row['strongs_definition'];
-      if (typeof def === 'string' && def.length > 0) {
-        return def.toLowerCase().includes(target);
-      }
-      return false;
+      const fields = ['strongs_definition', 'lexicon_short_def', 'lexicon_long_def'];
+      return fields.some((field) => {
+        const val = row[field];
+        return typeof val === 'string' && val.length > 0 && val.toLowerCase().includes(target);
+      });
     });
     if (substringMatches.length > 0) {
       return { first: substringMatches[0], count: substringMatches.length };

@@ -356,6 +356,7 @@ async function main(): Promise<void> {
     // index them during ingestion rather than retroactively.
     await createMetadataIndex('book_id', 'number');
     await createMetadataIndex('testament', 'string');
+    await createMetadataIndex('translation_id', 'number');
 
     log('\nStarting full ingestion for all 5 translations...\n');
     for (const translation of TRANSLATIONS) {
