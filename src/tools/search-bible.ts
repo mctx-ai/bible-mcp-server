@@ -46,11 +46,11 @@ function buildVectorizeFilter(
   bookId: number | undefined,
   testament: string | undefined,
   translationId: number | undefined
-): Record<string, string> | undefined {
-  const filter: Record<string, string> = {};
+): Record<string, string | number> | undefined {
+  const filter: Record<string, string | number> = {};
 
   if (bookId !== undefined) {
-    filter['book_id'] = String(bookId);
+    filter['book_id'] = bookId;
   }
 
   if (testament !== undefined) {
@@ -58,7 +58,7 @@ function buildVectorizeFilter(
   }
 
   if (translationId !== undefined) {
-    filter['translation_id'] = String(translationId);
+    filter['translation_id'] = translationId;
   }
 
   return Object.keys(filter).length > 0 ? filter : undefined;
