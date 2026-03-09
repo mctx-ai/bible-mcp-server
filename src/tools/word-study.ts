@@ -573,6 +573,7 @@ function buildOtherOccurrencesInline(
 wordStudy.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 

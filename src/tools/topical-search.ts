@@ -294,6 +294,7 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
 topicalSearch.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 

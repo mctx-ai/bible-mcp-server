@@ -179,6 +179,7 @@ const concordance: ToolHandler = async (args, _ask?) => {
 concordance.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 
