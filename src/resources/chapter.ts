@@ -7,6 +7,7 @@
 import type { ResourceHandler } from '@mctx-ai/mcp-server';
 import { d1 } from '../lib/cloudflare.js';
 import {
+  getTranslation,
   isValidTranslation,
   resolveBook,
   makeCitation,
@@ -35,16 +36,16 @@ interface ErrorResult {
 }
 
 const handler: ResourceHandler = async (params) => {
-  const { translation, book, chapter } = params as {
+  const { translation: translationParam, book, chapter } = params as {
     translation: string;
     book: string;
     chapter: string;
   };
 
-  const translationUpper = translation.toUpperCase();
+  const translationUpper = translationParam.toUpperCase();
   if (!isValidTranslation(translationUpper)) {
     const result: ErrorResult = {
-      error: `Unknown translation: "${translation}". Use bible://translations to list available translations.`,
+      error: `Unknown translation: "${translationParam}". Use bible://translations to list available translations.`,
     };
     return JSON.stringify(result);
   }
@@ -65,16 +66,24 @@ const handler: ResourceHandler = async (params) => {
     return JSON.stringify(result);
   }
 
+  const translation = getTranslation(translationUpper);
+  if (!translation) {
+    // This path should not be reached because isValidTranslation guards above,
+    // but guard defensively in case the cache is not yet populated.
+    const result: ErrorResult = {
+      error: `Translation "${translationUpper}" not found in cache. Try again after initialization.`,
+    };
+    return JSON.stringify(result);
+  }
+
   const queryResult = await d1.query(
     `SELECT v.verse, v.text
        FROM verses v
-       JOIN translations t ON t.id = v.translation_id
-       JOIN books b ON b.id = v.book_id
-      WHERE t.abbreviation = ?
-        AND b.id = ?
+      WHERE v.translation_id = ?
+        AND v.book_id = ?
         AND v.chapter = ?
       ORDER BY v.verse`,
-    [translationUpper, resolvedBook.id, chapterNum]
+    [translation.id, resolvedBook.id, chapterNum]
   );
 
   if (queryResult.results.length === 0) {
