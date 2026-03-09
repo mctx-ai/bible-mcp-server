@@ -154,6 +154,7 @@ const crossReferences: ToolHandler = async (args, _ask?) => {
 crossReferences.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 

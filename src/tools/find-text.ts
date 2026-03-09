@@ -155,6 +155,7 @@ const findText: ToolHandler = async (args, _ask?) => {
 findText.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 

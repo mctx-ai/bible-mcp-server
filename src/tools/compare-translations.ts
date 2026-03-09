@@ -125,6 +125,7 @@ const compareTranslations: ToolHandler = async (args, _ask?) => {
 compareTranslations.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 

@@ -412,6 +412,7 @@ const searchBible: ToolHandler = async (args, _ask?) => {
 searchBible.annotations = {
   readOnlyHint: true,
   destructiveHint: false,
+  idempotentHint: true,
   openWorldHint: true,
 };
 
