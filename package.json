@@ -53,7 +53,7 @@
     "setup:infra": "bash scripts/setup-infra.sh"
   },
   "dependencies": {
-    "@mctx-ai/mcp-server": "^0.6.1"
+    "@mctx-ai/mcp-server": "0.8.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

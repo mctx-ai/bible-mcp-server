@@ -55,7 +55,7 @@ interface WordStudyResult {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
-const wordStudy: ToolHandler = async (args) => {
+const wordStudy: ToolHandler = async (args, _ask?) => {
   await ensureInitialized();
 
   const { book, chapter, verse, word } = args as {

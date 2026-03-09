@@ -53,7 +53,7 @@ interface FindTextResult {
 const FIND_TEXT_DEFAULT_LIMIT = 20;
 const FIND_TEXT_MAX_LIMIT = 100;
 
-const findText: ToolHandler = async (args) => {
+const findText: ToolHandler = async (args, _ask?) => {
   await ensureInitialized();
 
   const { query, translation, limit: rawLimit } = args as {

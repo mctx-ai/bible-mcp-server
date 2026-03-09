@@ -196,7 +196,7 @@ async function fetchVersesByLocations(
 
 // ─── Tool implementation ──────────────────────────────────────────────────────
 
-const searchBible: ToolHandler = async (args) => {
+const searchBible: ToolHandler = async (args, _ask?) => {
   await ensureInitialized();
 
   const {
