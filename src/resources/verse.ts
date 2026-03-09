@@ -7,6 +7,7 @@
 import type { ResourceHandler } from '@mctx-ai/mcp-server';
 import { d1 } from '../lib/cloudflare.js';
 import {
+  getTranslation,
   isValidTranslation,
   resolveBook,
   makeCitation,
@@ -41,17 +42,22 @@ interface ErrorResult {
 }
 
 const handler: ResourceHandler = async (params) => {
-  const { translation, book, chapter, verse } = params as {
+  const {
+    translation: translationParam,
+    book,
+    chapter,
+    verse,
+  } = params as {
     translation: string;
     book: string;
     chapter: string;
     verse: string;
   };
 
-  const translationUpper = translation.toUpperCase();
+  const translationUpper = translationParam.toUpperCase();
   if (!isValidTranslation(translationUpper)) {
     const result: ErrorResult = {
-      error: `Unknown translation: "${translation}". Use bible://translations to list available translations.`,
+      error: `Unknown translation: "${translationParam}". Use bible://translations to list available translations.`,
     };
     return JSON.stringify(result);
   }
@@ -80,21 +86,29 @@ const handler: ResourceHandler = async (params) => {
     return JSON.stringify(result);
   }
 
+  const translation = getTranslation(translationUpper);
+  if (!translation) {
+    // This path should not be reached because isValidTranslation guards above,
+    // but guard defensively in case the cache is not yet populated.
+    const result: ErrorResult = {
+      error: `Translation "${translationUpper}" not found in cache. Try again after initialization.`,
+    };
+    return JSON.stringify(result);
+  }
+
   const minVerse = Math.max(1, verseNum - CONTEXT_BEFORE);
   const maxVerse = verseNum + CONTEXT_AFTER;
 
   const queryResult = await d1.query(
     `SELECT v.verse, v.text
        FROM verses v
-       JOIN translations t ON t.id = v.translation_id
-       JOIN books b ON b.id = v.book_id
-      WHERE t.abbreviation = ?
-        AND b.id = ?
+      WHERE v.translation_id = ?
+        AND v.book_id = ?
         AND v.chapter = ?
         AND v.verse >= ?
         AND v.verse <= ?
       ORDER BY v.verse`,
-    [translationUpper, resolvedBook.id, chapterNum, minVerse, maxVerse]
+    [translation.id, resolvedBook.id, chapterNum, minVerse, maxVerse]
   );
 
   if (queryResult.results.length === 0) {
