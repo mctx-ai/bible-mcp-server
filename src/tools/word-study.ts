@@ -73,10 +73,14 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
     translation?: string;
   };
 
-  // Resolve translation ID for verse text. Falls back to KJV (id=1) when the
+  // Resolve translation ID for verse text. Falls back to KJV when the
   // user doesn't specify a translation or specifies an unknown one.
-  const KJV_TRANSLATION_ID = 1;
-  let verseTranslationId = KJV_TRANSLATION_ID;
+  const kjvTranslation = getTranslation('KJV');
+  const kjvId = kjvTranslation?.id;
+  if (!kjvId) {
+    throw new Error('KJV translation not found in database. Ensure the database is initialized.');
+  }
+  let verseTranslationId = kjvId;
   let verseTranslationAbbrev = 'KJV';
   if (translation !== undefined && isValidTranslation(translation)) {
     const resolvedTranslation = getTranslation(translation);
@@ -206,29 +210,29 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
     return partialResult;
   }
 
-  // 5–8. Batch all remaining queries.
+  // 5–8. Issue all remaining queries concurrently.
   const [strongsResult, lexiconResult, otherVersesMorphResult, countResult] =
-    await d1.batch([
+    await Promise.all([
       // 5. Strong's entry.
-      {
-        sql: `SELECT original_word, transliteration, definition, language
+      d1.query(
+        `SELECT original_word, transliteration, definition, language
               FROM strongs
               WHERE prefixed_number = ?`,
-        params: [strongsNumber],
-      },
+        [strongsNumber]
+      ),
       // 6. Lexicon entry (BDB for Hebrew, Thayer for Greek).
-      {
-        sql: `SELECT short_def, long_def
+      d1.query(
+        `SELECT short_def, long_def
               FROM lexicon_entries
               WHERE strongs_number = ?
               LIMIT 1`,
-        params: [strongsNumber],
-      },
+        [strongsNumber]
+      ),
       // 7. Other verses with the same strongs_number (up to 20, canonical order).
       //    JOIN verses and books inline to return verse text and book name
-      //    in a single round-trip, eliminating the separate fetchVerseTexts call.
-      {
-        sql: `SELECT DISTINCT m.book_id, m.chapter, m.verse,
+      //    in a single round-trip.
+      d1.query(
+        `SELECT DISTINCT m.book_id, m.chapter, m.verse,
                      v.text AS verse_text,
                      b.name AS book_name
               FROM morphology m
@@ -241,19 +245,19 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
                 AND NOT (m.book_id = ? AND m.chapter = ? AND m.verse = ?)
               ORDER BY m.book_id, m.chapter, m.verse
               LIMIT 20`,
-        params: [verseTranslationId, strongsNumber, resolvedBook.id, chapter, verse],
-      },
+        [verseTranslationId, strongsNumber, resolvedBook.id, chapter, verse]
+      ),
       // 8. Total occurrence count (distinct verses).
       //    String concatenation with '.' as separator is safe here because
       //    book_id, chapter, and verse are all integers, so a '.' never
       //    appears in any component value — making each composite key
       //    unambiguous (e.g. "1.2.3" can only mean book 1, chapter 2, verse 3).
-      {
-        sql: `SELECT COUNT(DISTINCT (book_id || '.' || chapter || '.' || verse)) AS total
+      d1.query(
+        `SELECT COUNT(DISTINCT (book_id || '.' || chapter || '.' || verse)) AS total
               FROM morphology
               WHERE strongs_number = ?`,
-        params: [strongsNumber],
-      },
+        [strongsNumber]
+      ),
     ]);
 
   // 5. Parse Strong's entry.
@@ -315,22 +319,27 @@ const wordStudy: ToolHandler = async (args, _ask?) => {
  * compound sub-parts like '2a', '2b' — returning the first (primary) match.
  * If the param is already a compound position (e.g. '2a'), it matches exactly.
  */
+/** Normalize a word_position string by stripping leading zeros (e.g. '001' → '1', '01a' → '1a'). */
+function normalizePos(p: string): string {
+  return p.replace(/^0+(\d)/, '$1').toLowerCase();
+}
+
 function matchByPosition(
   wordParam: string,
   morphRows: Record<string, unknown>[]
 ): Record<string, unknown> | undefined {
-  const lower = wordParam.toLowerCase();
+  const normalizedParam = normalizePos(wordParam);
 
   // Exact match first (handles '1a', '2b', or plain '1' when only one row).
   const exact = morphRows.find(
-    (row) => String(row['word_position']).toLowerCase() === lower
+    (row) => normalizePos(String(row['word_position'])) === normalizedParam
   );
   if (exact) return exact;
 
   // If plain integer, also match compound sub-parts (e.g. '1' → '1a', '1b').
   if (/^\d+$/.test(wordParam)) {
     return morphRows.find((row) =>
-      String(row['word_position']).toLowerCase().startsWith(lower)
+      normalizePos(String(row['word_position'])).startsWith(normalizedParam)
     );
   }
 

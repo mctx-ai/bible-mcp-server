@@ -74,9 +74,9 @@ describe('getConfig()', () => {
   });
 });
 
-// ─── d1.batch() tests ─────────────────────────────────────────────────────────
+// ─── d1.query() tests ─────────────────────────────────────────────────────────
 
-describe('d1.batch()', () => {
+describe('d1.query()', () => {
   beforeEach(() => {
     resetConfigForTesting();
     vi.stubEnv('BIBLE_API_TOKEN', 'test-token');
@@ -89,18 +89,8 @@ describe('d1.batch()', () => {
     vi.unstubAllGlobals();
   });
 
-  test('empty array input returns [] immediately without making HTTP call', async () => {
-    const mockFetch = vi.fn();
-    vi.stubGlobal('fetch', mockFetch);
-
-    const result = await d1.batch([]);
-
-    expect(result).toEqual([]);
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  test('single statement: correct URL construction, correct body shape, returns result', async () => {
-    const mockResult: Array<{ results: Record<string, unknown>[]; meta: Record<string, unknown>; success: boolean }> = [
+  test('correct URL construction, correct body shape, returns first result set', async () => {
+    const mockResult = [
       { results: [{ id: 1, name: 'Genesis' }], meta: { changes: 0, rows_read: 1 }, success: true },
     ];
 
@@ -110,7 +100,7 @@ describe('d1.batch()', () => {
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    const result = await d1.batch([{ sql: 'SELECT * FROM books', params: [] }]);
+    const result = await d1.query('SELECT * FROM books', []);
 
     const expectedUrl = `${BASE}/accounts/test-account/d1/database/test-db/query`;
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -119,61 +109,42 @@ describe('d1.batch()', () => {
     expect(calledUrl).toBe(expectedUrl);
 
     const body = JSON.parse(calledInit.body as string);
-    expect(body).toEqual([{ sql: 'SELECT * FROM books', params: [] }]);
+    expect(body).toEqual({ sql: 'SELECT * FROM books', params: [] });
 
-    expect(result).toHaveLength(1);
-    expect(result[0].results).toEqual([{ id: 1, name: 'Genesis' }]);
+    expect(result.results).toEqual([{ id: 1, name: 'Genesis' }]);
   });
 
-  test('multiple statements: body is array of {sql, params}, returns array of results in order', async () => {
-    const mockResults = [
+  test('passes params correctly to the request body', async () => {
+    const mockResult = [
       { results: [{ count: 5 }], meta: { changes: 0, rows_read: 1 }, success: true },
-      { results: [{ count: 10 }], meta: { changes: 0, rows_read: 1 }, success: true },
     ];
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, errors: [], result: mockResults }),
+      json: async () => ({ success: true, errors: [], result: mockResult }),
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    const statements = [
-      { sql: 'SELECT COUNT(*) AS count FROM verses', params: [] },
-      { sql: 'SELECT COUNT(*) AS count FROM books WHERE testament = ?', params: ['OT'] },
-    ];
-
-    const result = await d1.batch(statements);
+    await d1.query('SELECT COUNT(*) AS count FROM books WHERE testament = ?', ['OT']);
 
     const [, calledInit] = mockFetch.mock.calls[0];
     const body = JSON.parse(calledInit.body as string);
-    expect(body).toEqual([
-      { sql: 'SELECT COUNT(*) AS count FROM verses', params: [] },
-      { sql: 'SELECT COUNT(*) AS count FROM books WHERE testament = ?', params: ['OT'] },
-    ]);
-
-    expect(result).toHaveLength(2);
-    expect(result[0].results).toEqual([{ count: 5 }]);
-    expect(result[1].results).toEqual([{ count: 10 }]);
+    expect(body).toEqual({
+      sql: 'SELECT COUNT(*) AS count FROM books WHERE testament = ?',
+      params: ['OT'],
+    });
   });
 
-  test("throws descriptive error when result count doesn't match statement count", async () => {
-    // API returns 1 result but we sent 2 statements
-    const mockResults = [
-      { results: [], meta: { changes: 0, rows_read: 0 }, success: true },
-    ];
-
+  test('throws on empty result array from API', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ success: true, errors: [], result: mockResults }),
+      json: async () => ({ success: true, errors: [], result: [] }),
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    await expect(
-      d1.batch([
-        { sql: 'SELECT 1' },
-        { sql: 'SELECT 2' },
-      ])
-    ).rejects.toThrow(/D1 batch returned 1 results for 2 statements/);
+    await expect(d1.query('SELECT 1')).rejects.toThrow(
+      /D1 query returned an unexpected empty result array/
+    );
   });
 
   test('throws on HTTP error (non-ok response)', async () => {
@@ -185,8 +156,37 @@ describe('d1.batch()', () => {
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    await expect(
-      d1.batch([{ sql: 'SELECT 1' }])
-    ).rejects.toThrow(/Cloudflare API error: 403 Forbidden/);
+    await expect(d1.query('SELECT 1')).rejects.toThrow(
+      /Cloudflare API error: 403 Forbidden/
+    );
+  });
+
+  test('multiple concurrent queries via Promise.all return independent results', async () => {
+    const mockResults1 = [
+      { results: [{ id: 1 }], meta: { changes: 0, rows_read: 1 }, success: true },
+    ];
+    const mockResults2 = [
+      { results: [{ id: 2 }], meta: { changes: 0, rows_read: 1 }, success: true },
+    ];
+
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      const result = callCount === 1 ? mockResults1 : mockResults2;
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ success: true, errors: [], result }),
+      });
+    });
+    vi.stubGlobal('fetch', mockFetch);
+
+    const [r1, r2] = await Promise.all([
+      d1.query('SELECT 1'),
+      d1.query('SELECT 2'),
+    ]);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(r1.results).toEqual([{ id: 1 }]);
+    expect(r2.results).toEqual([{ id: 2 }]);
   });
 });

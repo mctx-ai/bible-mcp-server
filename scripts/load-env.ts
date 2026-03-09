@@ -31,7 +31,28 @@ try {
     if (eqIdx === -1) continue;
 
     const key = trimmed.slice(0, eqIdx).trim();
-    const value = trimmed.slice(eqIdx + 1).trim();
+    let value = trimmed.slice(eqIdx + 1);
+
+    // Strip inline comments: unquoted " # ..." suffix
+    // Only strip if the value is not surrounded by quotes (handled below).
+    const isQuoted = /^(['"])/.test(value.trimStart());
+    if (!isQuoted) {
+      // Remove inline comment: first occurrence of " #" or "\t#" outside the value
+      const commentMatch = /\s+#.*$/.exec(value);
+      if (commentMatch) {
+        value = value.slice(0, commentMatch.index);
+      }
+    }
+
+    value = value.trim();
+
+    // Strip surrounding single or double quotes
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
 
     // Only set if not already defined — shell-exported vars take precedence
     if (key && !(key in process.env)) {

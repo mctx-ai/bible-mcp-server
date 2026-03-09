@@ -11,6 +11,7 @@ import {
   isValidTranslation,
   resolveBook,
   makeCitation,
+  ensureInitialized,
 } from '../lib/bible-utils.js';
 import type { Citation } from '../lib/bible-utils.js';
 
@@ -42,6 +43,8 @@ interface ErrorResult {
 }
 
 const handler: ResourceHandler = async (params) => {
+  await ensureInitialized();
+
   const {
     translation: translationParam,
     book,

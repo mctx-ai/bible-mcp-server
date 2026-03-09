@@ -155,6 +155,20 @@ function parseFile(filePath: string, language: 'hebrew' | 'greek'): ParseResult 
       const digits = subEntryMatch[2];
       const primaryNumber = `${prefix}${digits}`;
 
+      // If no primary entry exists yet for this number, synthesize one from
+      // this sub-entry's data. This ensures the word_study JOIN to strongs
+      // succeeds for numbers that only appear as sub-entries in the source file.
+      if (!seenPrimary.has(primaryNumber)) {
+        seenPrimary.add(primaryNumber);
+        strongs.push({
+          prefixed_number: primaryNumber,
+          original_word: wordRaw,
+          transliteration: translitRaw,
+          definition: glossRaw,
+          language,
+        });
+      }
+
       // Emit as a lexicon entry under the primary number so that word_study
       // queries can retrieve all senses for a Strong's number.
       lexicon.push({

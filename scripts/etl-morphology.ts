@@ -416,8 +416,11 @@ async function loadMorphologyRows(
     r.parsing,
     r.translation_id,
   ]);
+  // INSERT OR REPLACE so that when TAHOT emits both a Ketiv and Qere row for
+  // the same (book, chapter, verse, word_position, translation_id), the later
+  // row (Qere — the correct reading) overwrites the earlier Ketiv row.
   const sql = buildMultiRowInserts(
-    `INSERT OR IGNORE INTO morphology
+    `INSERT OR REPLACE INTO morphology
       (book_id, chapter, verse, word_position, strongs_number, raw_strongs, lemma, parsing, translation_id)
     VALUES`,
     rows,

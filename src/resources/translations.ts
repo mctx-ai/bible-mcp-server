@@ -5,9 +5,10 @@
 // module load time — no D1 round-trip per request.
 
 import type { ResourceHandler } from '@mctx-ai/mcp-server';
-import { getAllTranslations } from '../lib/bible-utils.js';
+import { getAllTranslations, ensureInitialized } from '../lib/bible-utils.js';
 
-const handler: ResourceHandler = (_params) => {
+const handler: ResourceHandler = async (_params) => {
+  await ensureInitialized();
   const translations = getAllTranslations();
   return JSON.stringify(translations);
 };

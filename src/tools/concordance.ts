@@ -113,12 +113,12 @@ const concordance: ToolHandler = async (args, _ask?) => {
     countParams = [ftsPhrase];
   }
 
-  // Issue results and count queries together in a single d1.batch() call.
+  // Issue results and count queries concurrently.
   // The count result is only surfaced to callers when truncation occurs, but
-  // batching upfront avoids a serial round-trip in the truncated case.
-  const [result, countResult] = await d1.batch([
-    { sql: resultsSql, params: resultsParams },
-    { sql: countSql, params: countParams },
+  // fetching upfront avoids a serial round-trip in the truncated case.
+  const [result, countResult] = await Promise.all([
+    d1.query(resultsSql, resultsParams),
+    d1.query(countSql, countParams),
   ]);
 
   const truncated = result.results.length > limit;

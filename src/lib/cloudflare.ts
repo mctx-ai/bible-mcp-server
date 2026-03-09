@@ -3,6 +3,12 @@
 // In Cloudflare Workers, process.env is not populated until the request
 // handler runs, so module-scope reads always return empty strings.
 
+// Module-level singleton — intentional for Cloudflare Workers isolate lifecycle.
+// In a Workers isolate, process.env is not populated at module evaluation time
+// (only at request time), so config is read lazily on the first call to getConfig()
+// and then cached for the lifetime of the isolate (which handles many requests).
+// resetConfigForTesting() exists solely for test isolation and must never be
+// called in production code.
 let _config: {
   apiToken: string;
   accountId: string;
@@ -24,6 +30,7 @@ export function getConfig() {
   return _config;
 }
 
+/** Resets config cache for test isolation. Do not call in production. */
 export function resetConfigForTesting() {
   _config = null;
 }
@@ -116,38 +123,8 @@ async function d1Query(
   return result[0];
 }
 
-async function d1Batch(
-  statements: Array<{ sql: string; params?: unknown[] }>
-): Promise<D1Result[]> {
-  if (statements.length === 0) return [];
-
-  const body = statements.map((stmt) => ({
-    sql: stmt.sql,
-    params: stmt.params ?? [],
-  }));
-
-  const { accountId, databaseId } = getConfig();
-  const d1Base = `${BASE}/accounts/${accountId}/d1/database/${databaseId}`;
-
-  // The D1 batch endpoint accepts an array of SQL objects and returns
-  // one result set per statement in input order — single HTTP round-trip.
-  const results = await cfFetch<D1ResultSet[]>(`${d1Base}/query`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-
-  if (!Array.isArray(results) || results.length !== statements.length) {
-    throw new Error(
-      `D1 batch returned ${Array.isArray(results) ? results.length : 'non-array'} results for ${statements.length} statements`
-    );
-  }
-
-  return results;
-}
-
 export const d1 = {
   query: d1Query,
-  batch: d1Batch,
 };
 
 // ─── Vectorize client ─────────────────────────────────────────────────────────

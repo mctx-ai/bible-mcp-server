@@ -38,7 +38,7 @@ const MAX_LIMIT = 20;
 
 // When no translation filter, over-fetch from Vectorize to account for
 // deduplication across translations (up to 5 translations per verse).
-const VECTORIZE_OVERFETCH_MULTIPLIER = 6;
+const VECTORIZE_OVERFETCH_MULTIPLIER = 8;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -263,7 +263,7 @@ const searchBible: ToolHandler = async (args, _ask?) => {
   // When not filtering, overfetch to ensure enough unique locations after deduplication.
   const topK = translationId
     ? limit
-    : Math.min(limit * VECTORIZE_OVERFETCH_MULTIPLIER, 100);
+    : Math.min(limit * VECTORIZE_OVERFETCH_MULTIPLIER, 200);
 
   // Query Vectorize.
   const matches = await vectorize.query(queryVector, { topK, filter });

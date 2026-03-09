@@ -21,20 +21,33 @@ import type { Citation } from '../lib/bible-utils.js';
 /**
  * Sanitizes a user-supplied string for safe use in an FTS5 MATCH expression.
  *
- * FTS5 metacharacters (AND, OR, NOT, NEAR, *, ^, quotes, parentheses) can
- * alter query semantics or cause parse errors when taken literally. Wrapping
- * the input in double quotes turns it into an exact phrase search, neutralizing
- * all metacharacters. Any embedded double-quote characters are escaped by
+ * Multi-word inputs are wrapped in double quotes to produce an exact phrase
+ * search, neutralizing all FTS5 metacharacters (AND, OR, NOT, NEAR, *, ^,
+ * parentheses, etc.). Any embedded double-quote characters are escaped by
  * doubling them ("" is the SQLite FTS5 escape for a literal quote inside a
  * phrase).
  *
+ * Single-word inputs are NOT quoted so that FTS5 stemming remains active.
+ * Quoting a single word disables stemming, meaning "loves" would not match
+ * verses containing only "love". Special characters within single words are
+ * still escaped via quoting.
+ *
  * @example
  *   sanitizeFts5('God so loved')  → '"God so loved"'
+ *   sanitizeFts5('loves')         → 'loves'
  *   sanitizeFts5('it\'s "good"')  → '"it\'s ""good"""'
  */
 export function sanitizeFts5(input: string): string {
-  const escaped = input.replace(/"/g, '""');
-  return `"${escaped}"`;
+  const trimmed = input.trim();
+  const escaped = trimmed.replace(/"/g, '""');
+  // Only quote multi-word phrases; single words pass through to preserve stemming.
+  // Single words may still contain special chars that need quoting (e.g. apostrophes
+  // in some FTS5 tokenizer configs), so we quote if any FTS5 metacharacter is present.
+  const hasFts5Meta = /[\s"*^()\-:]/.test(trimmed) || /\b(AND|OR|NOT|NEAR)\b/i.test(trimmed);
+  if (hasFts5Meta) {
+    return `"${escaped}"`;
+  }
+  return escaped;
 }
 
 // ─── find_text tool ───────────────────────────────────────────────────────────

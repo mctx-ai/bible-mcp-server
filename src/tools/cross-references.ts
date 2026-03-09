@@ -48,7 +48,7 @@ const crossReferences: ToolHandler = async (args, _ask?) => {
     limit: number | undefined;
   };
 
-  const limit = rawLimit ?? DEFAULT_LIMIT;
+  const limit = Math.floor(rawLimit ?? DEFAULT_LIMIT);
 
   // Validate book and verse reference
   const validation = validateVerseRef(bookInput, chapter, verse);
@@ -70,17 +70,16 @@ const crossReferences: ToolHandler = async (args, _ask?) => {
     throw new Error(`Translation "${DEFAULT_TRANSLATION}" not found in database.`);
   }
 
-  // Fetch source verse text and cross-references in a single d1.batch() call
-  // to eliminate a serial HTTP round-trip.
-  const [sourceResult, xrefResult] = await d1.batch([
-    {
-      sql: `SELECT text FROM verses
+  // Fetch source verse text and cross-references concurrently.
+  const [sourceResult, xrefResult] = await Promise.all([
+    d1.query(
+      `SELECT text FROM verses
             WHERE book_id = ? AND chapter = ? AND verse = ? AND translation_id = ?
             LIMIT 1`,
-      params: [book.id, chapter, verse, translation.id],
-    },
-    {
-      sql: `SELECT
+      [book.id, chapter, verse, translation.id]
+    ),
+    d1.query(
+      `SELECT
                cr.to_book_id,
                cr.to_chapter,
                cr.to_verse,
@@ -99,8 +98,8 @@ const crossReferences: ToolHandler = async (args, _ask?) => {
                AND cr.from_verse    = ?
              ORDER BY cr.confidence DESC NULLS LAST, cr.id ASC
              LIMIT ?`,
-      params: [translation.id, book.id, chapter, verse, limit],
-    },
+      [translation.id, book.id, chapter, verse, limit]
+    ),
   ]);
 
   if (sourceResult.results.length === 0) {

@@ -92,11 +92,14 @@ async function checkRowCounts(): Promise<void> {
   }
 
   const crossRefsCount = await count('cross_references');
+  // Range is intentionally wider than the stated 606,140 from README to allow for
+  // minor variations across schema reseeds (e.g., from/to verse validation skipping
+  // a small number of references with non-canonical verse coordinates).
   const crossRefsInRange = crossRefsCount >= 600000 && crossRefsCount <= 610000;
   if (crossRefsInRange) {
     pass('cross_references', `${crossRefsCount} rows`);
   } else {
-    fail('cross_references', `Expected 600-610K, got ${crossRefsCount}`);
+    fail('cross_references', `Expected ~606K (600-610K range), got ${crossRefsCount}`);
   }
 
   const strongsTotal = await count('strongs');
