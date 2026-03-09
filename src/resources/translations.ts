@@ -7,7 +7,7 @@
 import type { ResourceHandler } from '@mctx-ai/mcp-server';
 import { getAllTranslations } from '../lib/bible-utils.js';
 
-const handler: ResourceHandler = (_params, _env?) => {
+const handler: ResourceHandler = (_params) => {
   const translations = getAllTranslations();
   return JSON.stringify(translations);
 };

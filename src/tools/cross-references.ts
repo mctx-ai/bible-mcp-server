@@ -38,7 +38,7 @@ interface CrossReferencesResult {
 const DEFAULT_TRANSLATION = 'KJV';
 const DEFAULT_LIMIT = 20;
 
-const crossReferences: ToolHandler = async (args, _ask?, _env?) => {
+const crossReferences: ToolHandler = async (args, _ask?) => {
   await ensureInitialized();
 
   const { book: bookInput, chapter, verse, limit: rawLimit } = args as {

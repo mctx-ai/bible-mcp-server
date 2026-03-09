@@ -41,7 +41,7 @@ interface ConcordanceResult {
 const CONCORDANCE_DEFAULT_LIMIT = 100;
 const CONCORDANCE_MAX_LIMIT = 500;
 
-const concordance: ToolHandler = async (args, _ask?, _env?) => {
+const concordance: ToolHandler = async (args, _ask?) => {
   await ensureInitialized();
 
   const { word, translation, limit: rawLimit } = args as {
