@@ -40,7 +40,7 @@ interface ErrorResult {
   error: string;
 }
 
-const handler: ResourceHandler = async (params) => {
+const handler: ResourceHandler = async (params, _env?) => {
   const { translation, book, chapter, verse } = params as {
     translation: string;
     book: string;

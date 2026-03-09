@@ -208,7 +208,7 @@ async function fetchVerseTexts(
 
 // ─── Tool handler ─────────────────────────────────────────────────────────────
 
-const topicalSearch: ToolHandler = async (args) => {
+const topicalSearch: ToolHandler = async (args, _ask?, _env?) => {
   await ensureInitialized();
 
   const { topic, limit } = args as { topic: string; limit: number };

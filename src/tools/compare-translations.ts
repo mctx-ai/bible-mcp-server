@@ -36,7 +36,7 @@ interface CompareTranslationsResult {
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
-const compareTranslations: ToolHandler = async (args) => {
+const compareTranslations: ToolHandler = async (args, _ask?, _env?) => {
   await ensureInitialized();
 
   const { book: bookInput, chapter, verse_start, verse_end } = args as {
