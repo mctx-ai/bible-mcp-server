@@ -62,15 +62,17 @@ const concordance: ToolHandler = async (args, _ask?) => {
   const ftsPhrase = sanitizeFts5(word);
 
   // Fetch one extra row beyond the limit so we can detect truncation without
-  // running a separate COUNT(*) query.
+  // relying solely on the count query result.
   const fetchLimit = limit + 1;
 
-  let sql: string;
-  let params: unknown[];
+  let resultsSql: string;
+  let resultsParams: unknown[];
+  let countSql: string;
+  let countParams: unknown[];
 
   if (translation !== undefined) {
     const t = getTranslation(translation);
-    sql = `
+    resultsSql = `
       SELECT v.id, v.chapter, v.verse, v.text, b.name AS book_name, b.canonical_order, t.abbreviation AS translation_abbrev
       FROM verses_fts f
       JOIN verses v ON f.rowid = v.id
@@ -81,9 +83,17 @@ const concordance: ToolHandler = async (args, _ask?) => {
       ORDER BY b.canonical_order, v.chapter, v.verse
       LIMIT ?
     `.trim();
-    params = [ftsPhrase, t!.id, fetchLimit];
+    resultsParams = [ftsPhrase, t!.id, fetchLimit];
+    countSql = `
+      SELECT COUNT(*) AS total
+      FROM verses_fts f
+      JOIN verses v ON f.rowid = v.id
+      WHERE verses_fts MATCH ?
+        AND v.translation_id = ?
+    `.trim();
+    countParams = [ftsPhrase, t!.id];
   } else {
-    sql = `
+    resultsSql = `
       SELECT v.id, v.chapter, v.verse, v.text, b.name AS book_name, b.canonical_order, t.abbreviation AS translation_abbrev
       FROM verses_fts f
       JOIN verses v ON f.rowid = v.id
@@ -93,10 +103,23 @@ const concordance: ToolHandler = async (args, _ask?) => {
       ORDER BY b.canonical_order, v.chapter, v.verse
       LIMIT ?
     `.trim();
-    params = [ftsPhrase, fetchLimit];
+    resultsParams = [ftsPhrase, fetchLimit];
+    countSql = `
+      SELECT COUNT(*) AS total
+      FROM verses_fts f
+      JOIN verses v ON f.rowid = v.id
+      WHERE verses_fts MATCH ?
+    `.trim();
+    countParams = [ftsPhrase];
   }
 
-  const result = await d1.query(sql, params);
+  // Issue results and count queries together in a single d1.batch() call.
+  // The count result is only surfaced to callers when truncation occurs, but
+  // batching upfront avoids a serial round-trip in the truncated case.
+  const [result, countResult] = await d1.batch([
+    { sql: resultsSql, params: resultsParams },
+    { sql: countSql, params: countParams },
+  ]);
 
   const truncated = result.results.length > limit;
   const rows = truncated ? result.results.slice(0, limit) : result.results;
@@ -144,36 +167,10 @@ const concordance: ToolHandler = async (args, _ask?) => {
     occurrences,
   };
 
-  // Include total_count only when results are truncated. A separate COUNT(*)
-  // query is issued only in this case to avoid paying the cost on every call.
-  if (truncated) {
-    let countSql: string;
-    let countParams: unknown[];
-
-    if (translation !== undefined) {
-      const t = getTranslation(translation);
-      countSql = `
-        SELECT COUNT(*) AS total
-        FROM verses_fts f
-        JOIN verses v ON f.rowid = v.id
-        WHERE verses_fts MATCH ?
-          AND v.translation_id = ?
-      `.trim();
-      countParams = [ftsPhrase, t!.id];
-    } else {
-      countSql = `
-        SELECT COUNT(*) AS total
-        FROM verses_fts f
-        JOIN verses v ON f.rowid = v.id
-        WHERE verses_fts MATCH ?
-      `.trim();
-      countParams = [ftsPhrase];
-    }
-
-    const countResult = await d1.query(countSql, countParams);
-    if (countResult.results.length > 0) {
-      response.total_count = countResult.results[0]['total'] as number;
-    }
+  // Include total_count only when results are truncated.
+  // The count was already fetched in the batch above — no extra round-trip needed.
+  if (truncated && countResult.results.length > 0) {
+    response.total_count = countResult.results[0]['total'] as number;
   }
 
   return response;
