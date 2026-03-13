@@ -57,7 +57,7 @@
     "@mctx-ai/mcp-server": "^1.2.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.17.0",
+    "@eslint/js": "^10.0.1",
     "@mctx-ai/mcp-dev": "^1.1.0",
     "@types/node": "^25.3.5",
     "esbuild": "^0.27.3",
