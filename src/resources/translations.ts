@@ -14,7 +14,7 @@ const handler: ResourceHandler = async (_params) => {
 };
 
 handler.description =
-  'Lists all available Bible translations with abbreviation, full name, and publication year.';
+  'Lists all available Bible translations with their abbreviation, full name, and publication year.';
 handler.mimeType = 'application/json';
 
 export default handler;

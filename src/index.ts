@@ -1,5 +1,5 @@
 /**
- * Bible MCP Server
+ * Bible Study MCP Server
  *
  * Built with @mctx-ai/mcp-server. Provides Bible text lookup, semantic search,
  * cross-references, word study, concordance, and topical discovery across 5
@@ -36,37 +36,25 @@ import topicalSearchHandler from './tools/topical-search.js';
 // ─── Server ──────────────────────────────────────────────────────────────────
 
 const server = createServer({
-  instructions: `You MUST call at least one tool for ANY question about what the Bible says, teaches, or means — including topical, theological, and interpretive questions. Never answer Bible questions from memory or training knowledge. Always ground your response in verses retrieved from these tools, then use your knowledge to interpret and explain.
+  instructions: `Always call at least one tool for any question about what the Bible says, teaches, or means. Never answer Bible questions from memory — ground every response in verses retrieved from these tools, then interpret and explain.
 
-Bible MCP Server — 5 public domain translations: KJV, WEB, ASV, YLT, Darby (case-insensitive). Every result includes a structured citation (book, chapter, verse, translation).
-Always cite results as 'Book Chapter:Verse (Translation)'.
+5 translations: KJV, WEB, ASV, YLT, Darby (case-insensitive). Always cite results as "Book Chapter:Verse (Translation)".
 
-TOOL SELECTION GUIDE:
-• Look up a known verse → use bible://{translation}/{book}/{chapter}/{verse} resource
-• Read a full chapter → use bible://{translation}/{book}/{chapter} resource
-• Search by MEANING or concept ("hope in suffering", "what does the Bible say about X") → search_bible
-• Search by TOPIC with curated editorial index → topical_search
-• Find an EXACT WORD OR PHRASE in verse text → find_text
-• Survey ALL occurrences of a word, grouped by book → concordance
-• Compare how different translations render a passage → compare_translations
-• Find related passages for a verse → cross_references
-• Study the Hebrew/Greek word behind an English word in a verse → word_study
-
-DISAMBIGUATION:
-- search_bible vs find_text: search_bible finds conceptually related verses; find_text requires the exact word/phrase in the text.
-- find_text vs concordance: find_text is faster for spot checks; concordance groups all occurrences by book with totals.
-- search_bible vs topical_search: topical_search combines Nave's editorial index with semantic search; prefer for classic theological topics. Use search_bible for open-ended queries.
-For deep research, chain tools: topical_search → cross_references → word_study.
-
-FALLBACK:
-If a tool returns no results, try search_bible with a broader conceptual query before responding from general knowledge. If search_bible also returns nothing, say so explicitly rather than answering from memory.
+TOOLS:
+• search_bible — semantic/conceptual search ("what does the Bible say about anxiety?")
+• topical_search — topic lookup via Nave's curated index + semantic search; best for theological topics (faith, grace, forgiveness)
+• find_text — exact keyword or phrase search in verse text
+• concordance — all occurrences of a word or phrase grouped by book with counts
+• compare_translations — same passage side-by-side across all 5 translations
+• cross_references — related passages for a specific verse (606K references)
+• word_study — Hebrew/Greek original word, Strong's number, lexicon definition, and other occurrences
 
 RESOURCES:
 • bible://translations — list all translations
-• bible://{translation}/{book}/{chapter} — full chapter text
+• bible://{translation}/{book}/{chapter} — full chapter
 • bible://{translation}/{book}/{chapter}/{verse} — specific verse with surrounding context
 
-Book names accept full names, abbreviations, and common aliases (Gen, Matt, 1 Cor, Rev, etc.).`,
+Prefer topical_search over search_bible for established theological topics. Use find_text for exact wording; use concordance when you need all occurrences with book-level totals. Chain tools for deep research: topical_search → cross_references → word_study. For translation study: search_bible → compare_translations → word_study. If a tool returns no results, retry search_bible with a broader query before answering from general knowledge. Book names accept full names, abbreviations, and common aliases (Gen, Matt, 1 Cor, Rev).`,
 });
 
 // ─── Register Resources ───────────────────────────────────────────────────────

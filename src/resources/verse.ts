@@ -154,7 +154,7 @@ const handler: ResourceHandler = async (params) => {
 };
 
 handler.description =
-  'Returns a specific Bible verse in a given translation plus 2 verses before and 3 after for reading context. Context clips at chapter boundaries — verses from adjacent chapters are not included. The requested verse is marked requested: true in the response. Use this for direct verse lookup when you know the exact reference. Translations: KJV, WEB, ASV, YLT, Darby.';
+  'Returns a specific Bible verse with surrounding context (2 verses before and 3 after) in a given translation. The requested verse is flagged in the response. Context clips at chapter boundaries.';
 handler.mimeType = 'application/json';
 
 export default handler;

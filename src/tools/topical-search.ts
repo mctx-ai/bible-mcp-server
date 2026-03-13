@@ -299,11 +299,7 @@ topicalSearch.annotations = {
 };
 
 topicalSearch.description =
-  'Find Bible verses on a theological topic using Nave\'s curated Topical Bible index combined with AI semantic search. ' +
-  'Nave\'s index covers 5,319 theological topics. ' +
-  'Best for established theological topics (forgiveness, prayer, faith, love, salvation) where Nave\'s editorial curation adds depth. ' +
-  'Results are deduplicated and marked by source (naves, semantic, or both); Nave\'s results may include editorial notes. ' +
-  'For open-ended or personal experience queries (e.g., "passages that helped me through grief"), prefer search_bible instead.';
+  'Find Bible verses on a theological topic by combining Nave\'s curated Topical Bible index (5,319 topics) with AI semantic search. Works well for established topics like forgiveness, prayer, faith, love, and salvation. Results indicate whether each verse came from Nave\'s editorial index, semantic search, or both.';
 
 topicalSearch.input = {
   topic: T.string({

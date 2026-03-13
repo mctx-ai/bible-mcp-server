@@ -184,11 +184,7 @@ concordance.annotations = {
 };
 
 concordance.description =
-  'Survey every occurrence of a word across the entire Bible, grouped by book in canonical order. ' +
-  'Searches single words only; use find_text for phrases. ' +
-  'Use this for complete word studies (e.g. how many times does "grace" appear in each book?). ' +
-  'Unlike find_text, results are grouped by book with per-book counts; when truncated, total_count shows the full match count. ' +
-  'Optionally filter by translation (KJV, WEB, ASV, YLT, Darby). For phrase searches or faster spot checks, use find_text instead.';
+  'Find every occurrence of a word or phrase across the entire Bible, grouped by book in canonical order with per-book counts. Good for tracing how a word is used throughout Scripture — for example, how many times "grace" appears in each book. Optionally filter by translation.';
 
 concordance.input = {
   word: T.string({

@@ -160,11 +160,7 @@ findText.annotations = {
 };
 
 findText.description =
-  'Find Bible verses containing an exact, case-insensitive word or phrase using full-text search. ' +
-  'Use this when you know the specific wording to search for (e.g. "consider the lilies", "fear not"). ' +
-  'Faster than search_bible and returns matches in canonical order (Genesis to Revelation). ' +
-  'Use concordance instead when you need all occurrences of a single word grouped by book with totals. ' +
-  'Optionally filter by translation (KJV, WEB, ASV, YLT, Darby).';
+  'Find Bible verses containing a specific word or phrase using full-text search — use this when you know the exact wording you\'re looking for, like "consider the lilies" or "fear not". Returns matches in canonical order across all 5 translations. Optionally filter by translation.';
 
 findText.input = {
   query: T.string({

@@ -417,7 +417,7 @@ searchBible.annotations = {
 };
 
 searchBible.description =
-  'Search the Bible by meaning using AI semantic similarity — finds conceptually related verses even when they do not contain the query words. Use this for open-ended questions ("what does the Bible say about anxiety?") or thematic queries. Prefer topical_search for classic theological topics (faith, grace, forgiveness) where Nave\'s curated index adds value. Prefer find_text when you need an exact word or phrase match. Optionally filter by translation (KJV, WEB, ASV, YLT, Darby), book, or testament (OT/NT). Without a translation filter, each verse location returns all matching translations (up to 5x results). Returns ranked results with full citation and verse text.';
+  'Search the Bible by meaning using AI semantic similarity — finds thematically related verses even when they don\'t contain the exact query words. Good for open-ended questions like "what does the Bible say about anxiety?" or "passages about hope in suffering". Optionally filter by translation, book, or testament (OT/NT).';
 
 searchBible.input = {
   query: T.string({

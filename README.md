@@ -1,10 +1,10 @@
-# Bible
+# Bible Study
 
 A complete scholarly Bible study toolkit — semantic search, original-language word studies, translation comparison, cross-reference traversal, and topical research — available as AI-native tools for the first time.
 
 Without this server, deep Bible study means juggling multiple browser tabs: a concordance site here, a lexicon there, a translation comparison tool somewhere else. You lose the thread of your research every time you switch. This server brings all of that into your AI assistant, where each result informs the next question and the entire study session stays in one conversation.
 
-Your AI already knows the Bible in general terms — what this server gives it is the structured scholarly data that doesn't exist in any training set: 17,543 Strong's entries with full BDB and Thayer lexicon definitions, morphological parsing for 447,734 individual words, the complete OpenBible cross-reference dataset, and Nave's 5,319 topical categories.
+Unlike asking your AI from general knowledge, this server gives your assistant access to structured scholarly data that no training set contains: 17,543 Strong's entries with full BDB and Thayer lexicon definitions, morphological parsing for 447,734 individual words, the complete OpenBible cross-reference dataset, and Nave's 5,319 topical categories.
 
 ---
 
@@ -26,43 +26,43 @@ Your AI already knows the Bible in general terms — what this server gives it i
 
 ## How It Works
 
-When you ask a Bible study question, the server queries a purpose-built database — 155,510 verses, 17,543 Strong's concordance entries, 447,734 morphology records, and 606,140 cross-references — and returns structured data your AI assistant can reason about directly. The AI gets facts and definitions, not HTML pages it has to summarize.
+When you ask a Bible study question, the server queries a purpose-built database and returns structured data your AI assistant can reason about directly. The AI gets facts and definitions, not HTML pages it has to summarize.
 
-Because each tool returns structured data, the tools chain naturally in a single conversation. You can find a passage semantically, compare how all five translations render the key term, look that term up in the Greek lexicon, and pull cross-references for the most significant occurrence — each step building on the last, without leaving the thread.
+Because each query returns structured data, the tools chain naturally in a single conversation. You can find a passage semantically, compare how all five translations render the key term, look that term up in the Greek lexicon, and pull cross-references for the most significant occurrence — each step building on the last, without leaving the thread.
 
 ---
 
 ## Using This Server
 
-Once subscribed, just talk to your AI assistant as you normally would. Ask your Bible study questions naturally — no tool names, no special syntax. The assistant handles the research behind the scenes.
+Once subscribed, just talk to your AI assistant as you normally would. Ask your Bible study questions naturally — no special syntax. The assistant handles the research behind the scenes.
 
 ---
 
 ## Example Phrases
 
-### Studying a Specific Passage
-
+**Studying a specific passage**
+You want to go deeper on a verse you are reading — seeing how other translations render it, what passages connect to it, or what the original text says.
 - "Compare how the five translations render John 1:1."
 - "What cross-references does Romans 8:28 connect to?"
 - "Show me Genesis 1 in KJV and WEB side by side."
 - "What other passages does Hebrews 11:1 echo?"
 
-### Exploring Original Languages
-
+**Exploring original languages**
+You want to understand what the Hebrew or Greek actually says beneath the English translation.
 - "What is the Greek word for 'love' in John 3:16 — is it agape or phileo?"
 - "Give me the full BDB definition for the Hebrew word translated 'covenant' in Genesis 15:18."
 - "Show me every New Testament verse where the same Greek word for 'grace' in Ephesians 2:8 appears."
 - "What does the morphology tell us about the verb 'was' in John 1:1 in the Greek?"
 
-### Finding Passages by Topic or Concept
-
+**Finding passages by topic or concept**
+You want to know what the Bible teaches on a subject, or find passages that match a meaning rather than a keyword.
 - "What does the Bible say about forgiveness? Use Nave's topical index."
 - "Find passages about God's faithfulness during suffering — search by meaning, not just keyword."
 - "Look up 'patience' in Nave's and show me the associated verses."
 - "Search semantically for verses about light overcoming darkness."
 
-### Sermon and Teaching Research
-
+**Sermon and teaching research**
+You are preparing to preach or teach and need cross-references, lexical support, and translation awareness all in one session.
 - "I'm preparing a sermon on covenant. Find cross-references for Genesis 15, compare the translations on the key verses, and look up the Hebrew word for 'covenant.'"
 - "What are the major New Testament passages on the resurrection? Search Nave's for 'resurrection of Christ.'"
 - "Give me a word study on 'sanctify' for a teaching on holiness — Greek roots, lexicon definition, and usage across the New Testament."
@@ -92,17 +92,3 @@ Once subscribed, just talk to your AI assistant as you normally would. Ask your 
 **The seminary student writing an exegesis paper on Ephesians 2:8–9.** He needs to demonstrate awareness of the Greek grammar, the lexical range of *charis*, and how the passage connects to the broader Pauline corpus. He asks for a word study on the Greek for "grace," then separately queries the cross-references to see which passages the OpenBible dataset links to this verse. He uses the semantic search to find thematically related passages that don't share the exact word, and pastes the structured results directly into his annotated bibliography notes. The entire research thread lives in one session so he can pick up the next day without losing context.
 
 **The small group leader preparing a discussion on forgiveness.** She wants more than a keyword search — she wants the topical shape of what the Bible teaches. She opens with Nave's for "forgiveness," scans the subcategories and associated verses, then asks the server to compare how three translations render a verse that surprised her. When her group asks on Thursday night why a particular translation says "pardon" where others say "forgive," she already has the lexical answer ready.
-
----
-
-## Data at a Glance
-
-| Dataset | Scale |
-|---|---|
-| English translations | 5 complete (KJV, WEB, ASV, YLT, Darby) — 155,510 verses total |
-| Semantic search embeddings | 155,510 vector embeddings |
-| Cross-references | 606,140 (OpenBible.info dataset) |
-| Strong's concordance entries | 17,543 Hebrew and Greek entries |
-| Lexicon definitions | 17,543 entries with short and long definitions |
-| Morphology records | 447,734 word-level parsing records (OT Hebrew + NT Greek) |
-| Nave's Topical Bible | 5,319 categories, 140,654 verse associations |
