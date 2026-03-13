@@ -30,6 +30,11 @@ interface TopicalSearchResponse {
   total_results: number;
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+// Overfetch from Vectorize to account for deduplication across translations.
+const VECTORIZE_OVERFETCH_MULTIPLIER = 8;
+
 // ─── D1 row shapes ────────────────────────────────────────────────────────────
 
 interface NaveVerseRow {
@@ -90,8 +95,9 @@ async function searchNaves(
                          ${translationFilter}
      JOIN translations t  ON t.id = v.translation_id
      WHERE nt.normalized_topic LIKE ? ESCAPE '\\'
+     ORDER BY b.canonical_order, ntv.chapter, ntv.verse
      LIMIT ?`,
-    [...translationParams, `%${escaped}%`, limit],
+    [...translationParams, `%${escaped}%`, limit * 3],
   );
 
   const resultMap = new Map<string, TopicalResult>();
@@ -128,16 +134,17 @@ async function searchNaves(
 async function searchSemantic(
   topic: string,
   limit: number,
-): Promise<Map<string, { book_id: number; chapter: number; verse: number; translation_id: number }>> {
+): Promise<Map<string, { book_id: number; chapter: number; verse: number; translation_id: number; score: number }>> {
   // Generate embedding for the topic string.
   const embeddings = await workersAi.embed([topic]);
   if (embeddings.length === 0) return new Map();
 
-  const matches = await vectorize.query(embeddings[0], { topK: limit });
+  const topK = Math.min(limit * VECTORIZE_OVERFETCH_MULTIPLIER, 200);
+  const matches = await vectorize.query(embeddings[0], { topK });
   if (matches.length === 0) return new Map();
 
   // Each match metadata contains book_id, chapter, verse, translation_id.
-  const coordMap = new Map<string, { book_id: number; chapter: number; verse: number; translation_id: number }>();
+  const coordMap = new Map<string, { book_id: number; chapter: number; verse: number; translation_id: number; score: number }>();
 
   for (const match of matches) {
     const meta = match.metadata;
@@ -154,7 +161,7 @@ async function searchSemantic(
     // We'll fetch the actual book name via D1 query below.
     const key = `${bookId}:${chapter}:${verse}`;
     if (!coordMap.has(key)) {
-      coordMap.set(key, { book_id: bookId, chapter, verse, translation_id: translationId });
+      coordMap.set(key, { book_id: bookId, chapter, verse, translation_id: translationId, score: match.score });
     }
   }
 
@@ -225,6 +232,53 @@ async function fetchVerseTexts(
   return verseMap;
 }
 
+// ─── Consecutive verse cap ────────────────────────────────────────────────────
+
+// Caps Nave's results to at most 2 consecutive verses per book:chapter group.
+// "Consecutive" means verse numbers are sequential (e.g., 3,4 or 7,8).
+// This prevents a dense Nave's cluster from monopolizing the result set.
+function capConsecutiveVerses(
+  navesMap: Map<string, TopicalResult>,
+): Map<string, TopicalResult> {
+  // Group entries by book:chapter.
+  const byChapter = new Map<string, Array<{ key: string; verse: number; entry: TopicalResult }>>();
+
+  for (const [key, entry] of navesMap) {
+    const { book, chapter, verse } = entry.citation;
+    const chapterKey = `${book.trim().toLowerCase()}:${chapter}`;
+    if (!byChapter.has(chapterKey)) {
+      byChapter.set(chapterKey, []);
+    }
+    byChapter.get(chapterKey)!.push({ key, verse, entry });
+  }
+
+  const capped = new Map<string, TopicalResult>();
+
+  for (const group of byChapter.values()) {
+    // Sort by verse number so consecutive detection is straightforward.
+    group.sort((a, b) => a.verse - b.verse);
+
+    let consecutiveRun = 1;
+    let prevVerse: number | null = null;
+
+    for (const item of group) {
+      if (prevVerse !== null && item.verse === prevVerse + 1) {
+        consecutiveRun++;
+      } else {
+        consecutiveRun = 1;
+      }
+
+      if (consecutiveRun <= 2) {
+        capped.set(item.key, item.entry);
+      }
+
+      prevVerse = item.verse;
+    }
+  }
+
+  return capped;
+}
+
 // ─── Tool handler ─────────────────────────────────────────────────────────────
 
 const topicalSearch: ToolHandler = async (args, _ask?) => {
@@ -247,12 +301,20 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
     semanticVerseMapPromise,
   ]);
 
-  // Build final deduplicated results map.
-  // Nave's results already use "book_name:chapter:verse" keys.
-  // Semantic results use "book_id:chapter:verse" keys initially.
-  // We need a unified key. After fetching verse text, semantic results
-  // will have book_name — use that for the unified dedup key.
-  const unified = new Map<string, TopicalResult>(navesResults);
+  // Apply consecutive verse cap to Nave's results before merge.
+  const navesResultsCapped = capConsecutiveVerses(navesResults);
+
+  // Build semantic TopicalResults with score lookup.
+  // coordMap uses book_id:chapter:verse keys; build a unified-key score map via verseMap.
+  const semanticScoreByKey = new Map<string, number>();
+  for (const [coordKey, coord] of semanticCoords) {
+    const verseRow = semanticVerseMap.get(coordKey);
+    if (!verseRow) continue;
+    const unifiedKey = `${verseRow.book_name.trim().toLowerCase()}:${verseRow.chapter}:${verseRow.verse}`;
+    semanticScoreByKey.set(unifiedKey, coord.score);
+  }
+
+  const semanticEntries: Array<{ unifiedKey: string; result: TopicalResult }> = [];
 
   for (const [coordKey] of semanticCoords) {
     const verseRow = semanticVerseMap.get(coordKey);
@@ -260,10 +322,9 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
 
     const unifiedKey = `${verseRow.book_name.trim().toLowerCase()}:${verseRow.chapter}:${verseRow.verse}`;
 
-    if (unified.has(unifiedKey)) {
-      // Already in results from Nave's — mark as 'both', preserve Nave's note.
-      const existing = unified.get(unifiedKey)!;
-      existing.source = 'both';
+    if (navesResultsCapped.has(unifiedKey)) {
+      // Mark as 'both' in the Nave's map; it will be included via the Nave's pool.
+      navesResultsCapped.get(unifiedKey)!.source = 'both';
     } else {
       const citation: Citation = {
         book: verseRow.book_name,
@@ -272,15 +333,58 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
         translation: verseRow.translation_abbrev,
       };
 
-      unified.set(unifiedKey, {
-        text: verseRow.text,
-        citation,
-        source: 'semantic',
+      semanticEntries.push({
+        unifiedKey,
+        result: { text: verseRow.text, citation, source: 'semantic' },
       });
     }
   }
 
-  const results = Array.from(unified.values()).slice(0, limit);
+  // Sort semantic entries by descending vector score.
+  semanticEntries.sort((a, b) => {
+    const scoreA = semanticScoreByKey.get(a.unifiedKey) ?? 0;
+    const scoreB = semanticScoreByKey.get(b.unifiedKey) ?? 0;
+    return scoreB - scoreA;
+  });
+
+  // Deduplicate semantic entries (a unified key may appear multiple times if
+  // multiple translations matched in the overfetch pool).
+  const uniqueSemanticEntries: Array<{ unifiedKey: string; result: TopicalResult }> = [];
+  const semanticSeen = new Set<string>();
+  for (const entry of semanticEntries) {
+    if (!semanticSeen.has(entry.unifiedKey)) {
+      semanticSeen.add(entry.unifiedKey);
+      uniqueSemanticEntries.push(entry);
+    }
+  }
+
+  // 60/40 budget split: Nave's gets 60%, semantic gets 40%.
+  const naveBudget = Math.round(limit * 0.6);
+  const semanticBudget = limit - naveBudget;
+
+  const navesPool = Array.from(navesResultsCapped.values());
+  const semanticPool = uniqueSemanticEntries.map((e) => e.result);
+
+  const naveSlice = navesPool.slice(0, naveBudget);
+  const semanticSlice = semanticPool.slice(0, semanticBudget);
+
+  // Graceful degradation: unused slots from either source backfill from the other.
+  const naveOverflow = naveBudget - naveSlice.length;
+  const semanticOverflow = semanticBudget - semanticSlice.length;
+
+  const extraSemantic = naveOverflow > 0
+    ? semanticPool.slice(semanticBudget, semanticBudget + naveOverflow)
+    : [];
+  const extraNaves = semanticOverflow > 0
+    ? navesPool.slice(naveBudget, naveBudget + semanticOverflow)
+    : [];
+
+  const results = [
+    ...naveSlice,
+    ...extraNaves,
+    ...semanticSlice,
+    ...extraSemantic,
+  ].slice(0, limit);
 
   const response: TopicalSearchResponse = {
     topic,
