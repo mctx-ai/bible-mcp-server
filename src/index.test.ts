@@ -307,7 +307,177 @@ describe('Tool: topical_search', () => {
     expect(data.result.content).toBeDefined();
     expect(Array.isArray(data.result.content)).toBe(true);
   });
+
+  test('returns major_witnesses in response schema', async () => {
+    const req = createRequest('tools/call', {
+      name: 'topical_search',
+      arguments: { topic: 'faith' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+
+    if (!data.result.isError) {
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(Array.isArray(parsed.major_witnesses)).toBe(true);
+    }
+  });
+
+  test('handles multi-word thematic queries without crashing', async () => {
+    const queries = [
+      "God's faithfulness during suffering",
+      'innocent suffering',
+      'lament and trust in God',
+      'God working through long periods of suffering',
+    ];
+
+    for (const topic of queries) {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result).toBeDefined();
+      expect(Array.isArray(data.result.content)).toBe(true);
+    }
+  });
 });
+
+describe.skipIf(!process.env.CLOUDFLARE_ACCOUNT_ID)(
+  'Tool: topical_search — thematic correctness',
+  () => {
+    test('"suffering" surfaces Job as major witness', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'suffering' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      const witnessBooks: string[] = parsed.major_witnesses.map(
+        (w: { book: string }) => w.book,
+      );
+      expect(witnessBooks).toContain('Job');
+    });
+
+    test('"innocent suffering" heavily favors Job', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'innocent suffering' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+      expect(parsed.major_witnesses[0].book).toBe('Job');
+    });
+
+    test('"lament and trust in God" surfaces Psalms', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'lament and trust in God' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      const witnessBooks: string[] = parsed.major_witnesses.map(
+        (w: { book: string }) => w.book,
+      );
+      expect(witnessBooks).toContain('Psalms');
+    });
+
+    test('major witnesses include representative verse with text', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'faith' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+      for (const witness of parsed.major_witnesses) {
+        expect(witness.representative_verse).toBeDefined();
+        expect(typeof witness.representative_verse.text).toBe('string');
+        expect(witness.representative_verse.text.length).toBeGreaterThan(0);
+        expect(typeof witness.representative_verse.citation).toBe('string');
+        expect(witness.representative_verse.citation.length).toBeGreaterThan(0);
+      }
+    });
+
+    test('verse results include at least one from a major witness book', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'suffering' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+
+      const witnessBooks = new Set<string>(
+        parsed.major_witnesses.map((w: { book: string }) => w.book),
+      );
+      const resultBooks = parsed.results.map(
+        (r: { book: string }) => r.book,
+      );
+      const hasOverlap = resultBooks.some((book: string) =>
+        witnessBooks.has(book),
+      );
+      expect(hasOverlap).toBe(true);
+    });
+
+    test('results include match_reason explanations', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'faith' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.results.length).toBeGreaterThan(0);
+
+      const hasMatchReason = parsed.results.some(
+        (r: { match_reason?: string }) =>
+          typeof r.match_reason === 'string' && r.match_reason.length > 0,
+      );
+      expect(hasMatchReason).toBe(true);
+    });
+
+    test('major witnesses include match_reason', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'suffering' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+      for (const witness of parsed.major_witnesses) {
+        expect(typeof witness.match_reason).toBe('string');
+        expect(witness.match_reason.length).toBeGreaterThan(0);
+      }
+    });
+  },
+);
 
 // ─── Resource Smoke Tests ─────────────────────────────────────────────────────
 

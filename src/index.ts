@@ -44,7 +44,7 @@ const server = createServer({
 
 TOOLS:
 • search_bible — semantic/conceptual search ("what does the Bible say about anxiety?")
-• topical_search — topic lookup via Nave's curated index + semantic search; best for theological topics (faith, grace, forgiveness)
+• topical_search — topic lookup via Nave's curated index + semantic search; returns major thematic witnesses (books and narratives) alongside individual verses with match explanations; best for theological topics (faith, grace, forgiveness). When results include major_witnesses, present them prominently — they represent the Bible's principal treatments of the topic.
 • find_text — exact keyword or phrase search in verse text
 • concordance — all occurrences of a word or phrase grouped by book with counts
 • compare_translations — same passage side-by-side across all 5 translations
