@@ -4,7 +4,7 @@ A complete scholarly Bible study toolkit — semantic search, original-language 
 
 Without this server, deep Bible study means juggling multiple browser tabs: a concordance site here, a lexicon there, a translation comparison tool somewhere else. You lose the thread of your research every time you switch. This server brings all of that into your AI assistant, where each result informs the next question and the entire study session stays in one conversation.
 
-Unlike asking your AI from general knowledge, this server gives your assistant access to structured scholarly data that no training set contains: 17,543 Strong's entries with full BDB and Thayer lexicon definitions, morphological parsing for 447,734 individual words, the complete OpenBible cross-reference dataset, and Nave's 5,319 topical categories.
+Unlike asking your AI from general knowledge, this server gives your assistant access to structured scholarly data that no training set contains: 17,543 Strong's entries with full BDB and Thayer lexicon definitions, morphological parsing for 447,748 individual words, the complete OpenBible cross-reference dataset, and Nave's 5,319 topical categories.
 
 ---
 
@@ -16,7 +16,7 @@ Unlike asking your AI from general knowledge, this server gives your assistant a
 
 **Five translations side by side.** Compare any verse or passage in KJV, WEB, ASV, YLT, and Darby simultaneously. See at a glance where translations agree and where meaningful differences in word choice appear.
 
-**606,140 cross-references.** For any verse, find the other passages that illuminate, echo, or expand on the same idea. Trace how a theme develops across both testaments without losing your place.
+**344,799 cross-references.** For any verse, find the other passages that illuminate, echo, or expand on the same idea. Trace how a theme develops across both testaments without losing your place.
 
 **Nave's Topical Bible with 5,319 categories.** Research what the Bible says about patience, covenant, prayer, or any of thousands of subjects, persons, and themes. Each topic connects to curated verse associations organized by the editors of Nave's original index. For broader thematic queries, the system identifies major biblical witnesses — books and narratives that are central treatments of your topic (such as Job for suffering, or the Psalms for lament) — alongside individual verse results.
 
