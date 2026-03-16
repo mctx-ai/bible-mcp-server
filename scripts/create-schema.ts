@@ -20,6 +20,7 @@ import './load-env.js';
 
 const DROP_STATEMENTS: string[] = [
   // Drop in reverse dependency order
+  'DROP TABLE IF EXISTS nave_topic_book_salience',
   'DROP TABLE IF EXISTS nave_topic_verses',
   'DROP TABLE IF EXISTS nave_topics',
   'DROP TABLE IF EXISTS morphology',
@@ -142,6 +143,18 @@ const TABLE_STATEMENTS: Record<string, string> = {
       UNIQUE(topic_id, book_id, chapter, verse)
     )
   `,
+
+  nave_topic_book_salience: `
+    CREATE TABLE IF NOT EXISTS nave_topic_book_salience (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      topic_id      INTEGER NOT NULL,
+      book_id       INTEGER NOT NULL,
+      salience      REAL NOT NULL,
+      verse_count   INTEGER NOT NULL,
+      chapter_count INTEGER NOT NULL,
+      UNIQUE(topic_id, book_id)
+    )
+  `,
 };
 
 const INDEX_STATEMENTS: Record<string, string> = {
@@ -178,6 +191,16 @@ const INDEX_STATEMENTS: Record<string, string> = {
   'idx_nave_topics_normalized': `
     CREATE INDEX IF NOT EXISTS idx_nave_topics_normalized
     ON nave_topics(normalized_topic)
+  `,
+
+  'idx_salience_book_topic': `
+    CREATE INDEX IF NOT EXISTS idx_salience_book_topic
+    ON nave_topic_book_salience(book_id, salience DESC)
+  `,
+
+  'idx_salience_topic': `
+    CREATE INDEX IF NOT EXISTS idx_salience_topic
+    ON nave_topic_book_salience(topic_id, salience DESC)
   `,
 };
 

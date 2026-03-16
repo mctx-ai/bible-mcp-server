@@ -47,9 +47,11 @@
     "etl:morphology": "tsx scripts/etl-morphology.ts",
     "etl:crossrefs": "tsx scripts/etl-crossrefs.ts",
     "etl:naves": "tsx scripts/etl-naves.ts",
+    "etl:salience": "tsx scripts/compute-salience.ts",
     "etl:strongs": "tsx scripts/etl-strongs.ts",
     "search:fts5": "tsx scripts/populate-fts5.ts",
     "search:embeddings": "tsx scripts/ingest-embeddings.ts",
+    "search:topic-embeddings": "tsx scripts/ingest-topic-embeddings.ts",
     "data:validate": "tsx scripts/validate.ts",
     "setup:infra": "bash scripts/setup-infra.sh",
     "typecheck": "tsc --noEmit && tsc --noEmit --project tsconfig.scripts.json"

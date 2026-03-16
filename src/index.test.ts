@@ -476,6 +476,116 @@ describe.skipIf(!process.env.CLOUDFLARE_ACCOUNT_ID)(
         expect(witness.match_reason.length).toBeGreaterThan(0);
       }
     });
+
+    test('"leadership" surfaces relevant results', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'leadership' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+    });
+
+    test('"redemption" matches REDEEM-related topics', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'redemption' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+    });
+
+    test('"exile and return" surfaces Jeremiah/Ezekiel', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'exile and return' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+      const witnessBooks: string[] = parsed.major_witnesses.map(
+        (w: { book: string }) => w.book,
+      );
+      const expectedBooks = ['Jeremiah', 'Ezekiel'];
+      const hasExpectedBook = expectedBooks.some((book) =>
+        witnessBooks.includes(book),
+      );
+      expect(hasExpectedBook).toBe(true);
+    });
+
+    test('"the Holy Spirit" surfaces Acts and John', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'the Holy Spirit' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+      const witnessBooks: string[] = parsed.major_witnesses.map(
+        (w: { book: string }) => w.book,
+      );
+      const expectedBooks = ['Acts', 'John'];
+      const hasExpectedBook = expectedBooks.some((book) =>
+        witnessBooks.includes(book),
+      );
+      expect(hasExpectedBook).toBe(true);
+    });
+
+    test('"end times prophecy" surfaces Daniel and Revelation', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: 'end times prophecy' },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+      const witnessBooks: string[] = parsed.major_witnesses.map(
+        (w: { book: string }) => w.book,
+      );
+      const expectedBooks = ['Daniel', 'Revelation'];
+      const hasExpectedBook = expectedBooks.some((book) =>
+        witnessBooks.includes(book),
+      );
+      expect(hasExpectedBook).toBe(true);
+    });
+
+    test('"God\'s sovereignty over nations" surfaces Isaiah/Daniel', async () => {
+      const req = createRequest('tools/call', {
+        name: 'topical_search',
+        arguments: { topic: "God's sovereignty over nations" },
+      });
+      const res = await server.fetch(req);
+      const data = await getResponse(res);
+
+      expect(data.result.isError).toBeFalsy();
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+      const witnessBooks: string[] = parsed.major_witnesses.map(
+        (w: { book: string }) => w.book,
+      );
+      const expectedBooks = ['Isaiah', 'Daniel'];
+      const hasExpectedBook = expectedBooks.some((book) =>
+        witnessBooks.includes(book),
+      );
+      expect(hasExpectedBook).toBe(true);
+    });
   },
 );
 

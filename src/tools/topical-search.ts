@@ -12,7 +12,7 @@
 
 import type { ToolHandler } from '@mctx-ai/mcp-server';
 import { T } from '@mctx-ai/mcp-server';
-import { d1, vectorize, workersAi } from '../lib/cloudflare.js';
+import { d1, vectorize, vectorizeTopics, workersAi } from '../lib/cloudflare.js';
 import type { Citation } from '../lib/bible-utils.js';
 import { getTranslation, ensureInitialized } from '../lib/bible-utils.js';
 
@@ -56,7 +56,6 @@ const MAJOR_WITNESS_MIN_VERSES = 5;
 const MAJOR_WITNESS_MIN_CHAPTERS = 2;
 const MAX_MAJOR_WITNESSES = 5;
 const MAX_EXPANDED_TOPICS = 50;
-const MAX_STEMS = 6;
 const WITNESS_INTERLEAVE_INTERVAL = 5;
 
 // ─── D1 row shapes ────────────────────────────────────────────────────────────
@@ -179,86 +178,104 @@ function naveTopicRelevance(topicName: string, query: string): number {
   return 0.2;
 }
 
-// ─── Stem extraction ──────────────────────────────────────────────────────────
+// ─── Semantic topic search (Vectorize topics index) ───────────────────────────
 
-const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'of', 'in', 'for', 'and', 'or', 'but', 'is', 'to',
-  'with', 'on', 'at', 'by', 'from', 'about', 'does', 'what', 'how', 'god',
-  'gods', 'bible', 'say', 'says', 'through', 'during', 'long', 'periods',
-  'where', 'most', 'parts',
-]);
+// Returns topics matching the query vector, post-filtered to 'topic-' prefixed
+// IDs. Falls back to empty array if the topic index is not configured.
+async function searchSemanticTopics(
+  queryVector: number[],
+): Promise<Array<{ id: number; name: string; score: number }>> {
+  const matches = await vectorizeTopics.query(queryVector, { topK: MAX_EXPANDED_TOPICS });
+  if (matches.length === 0) return [];
 
-// Suffix rules ordered longest-first to prevent double-stripping.
-const SUFFIX_RULES: Array<{ suffix: string; minLen?: number }> = [
-  { suffix: 'fulness' },
-  { suffix: 'ness' },
-  { suffix: 'ment' },
-  { suffix: 'tion' },
-  { suffix: 'ings' },
-  { suffix: 'ing' },
-  { suffix: 'ful' },
-  { suffix: 'ous' },
-  { suffix: 'less' },
-  { suffix: 'ance' },
-  { suffix: 'ence' },
-  { suffix: 'ly' },
-  { suffix: 'ed', minLen: 4 },
-  { suffix: 'es', minLen: 4 },
-  { suffix: 's', minLen: 3 },
-];
+  const topics: Array<{ id: number; name: string; score: number }> = [];
 
-function stripSuffix(word: string): string {
-  for (const rule of SUFFIX_RULES) {
-    if (!word.endsWith(rule.suffix)) continue;
-    const stripped = word.slice(0, word.length - rule.suffix.length);
-    const minLen = rule.minLen ?? 0;
-    if (stripped.length > minLen) return stripped;
-  }
-  return word;
-}
+  for (const match of matches) {
+    if (!match.id.startsWith('topic-')) continue;
+    const meta = match.metadata;
+    if (!meta) continue;
 
-function extractStems(topic: string): string[] {
-  const words = topic
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 0);
+    const topicId = meta['topic_id'] as number | undefined;
+    const topicName = meta['name'] as string | undefined;
+    if (!topicId || !topicName) continue;
 
-  const seen = new Set<string>();
-  const stems: string[] = [];
-
-  for (const word of words) {
-    if (STOP_WORDS.has(word)) continue;
-    const stem = stripSuffix(word);
-    if (stem.length <= 2) continue;
-    if (seen.has(stem)) continue;
-    seen.add(stem);
-    stems.push(stem);
-    if (stems.length >= MAX_STEMS) break;
+    topics.push({ id: topicId, name: topicName, score: match.score });
   }
 
-  return stems;
+  return topics;
 }
 
-// ─── Expanded topic query ─────────────────────────────────────────────────────
+// ─── Semantic book search (Vectorize topics index, book-level) ────────────────
 
-async function queryExpandedTopics(
-  stems: string[],
+// Returns book-level vectors matching the query vector, post-filtered to
+// 'book-' prefixed IDs. Falls back to empty array if topic index not configured.
+async function searchSemanticBooks(
+  queryVector: number[],
+): Promise<Array<{ book_id: number; score: number }>> {
+  const matches = await vectorizeTopics.query(queryVector, { topK: 66 });
+  if (matches.length === 0) return [];
+
+  const books: Array<{ book_id: number; score: number }> = [];
+
+  for (const match of matches) {
+    if (!match.id.startsWith('book-')) continue;
+    const meta = match.metadata;
+    if (!meta) continue;
+
+    const bookId = meta['book_id'] as number | undefined;
+    if (!bookId) continue;
+
+    books.push({ book_id: bookId, score: match.score });
+  }
+
+  return books;
+}
+
+// ─── Salience fetch ───────────────────────────────────────────────────────────
+
+// Queries nave_topic_book_salience for matching topic+book combinations.
+// Returns a Map keyed by 'bookId:topicId' → salience score.
+async function fetchSalience(
+  topicIds: number[],
+  bookIds: number[],
+): Promise<Map<string, number>> {
+  if (topicIds.length === 0 || bookIds.length === 0) return new Map();
+
+  const topicPlaceholders = topicIds.map(() => '?').join(', ');
+  const bookPlaceholders = bookIds.map(() => '?').join(', ');
+
+  const result = await d1.query(
+    `SELECT topic_id, book_id, salience
+     FROM nave_topic_book_salience
+     WHERE topic_id IN (${topicPlaceholders})
+       AND book_id IN (${bookPlaceholders})`,
+    [...topicIds, ...bookIds],
+  );
+
+  const salienceMap = new Map<string, number>();
+  for (const row of result.results) {
+    const topicId = row['topic_id'] as number;
+    const bookId = row['book_id'] as number;
+    const salience = row['salience'] as number;
+    salienceMap.set(`${bookId}:${topicId}`, salience);
+  }
+
+  return salienceMap;
+}
+
+// ─── Nave's expanded topic query (lightweight LIKE fallback) ──────────────────
+
+async function queryExpandedTopicsByLike(
+  topic: string,
 ): Promise<Array<{ id: number; name: string }>> {
-  if (stems.length === 0) return [];
-
-  const likeClauses = stems
-    .map(() => 'nt.normalized_topic LIKE ? ESCAPE \'\\\'')
-    .join('\n   OR ');
-
-  const params = stems.map((s) => `%${s}%`);
+  const escaped = topic.toLowerCase().replace(/%/g, '\\%').replace(/_/g, '\\_');
 
   const result = await d1.query(
     `SELECT DISTINCT nt.id, nt.name
      FROM nave_topics nt
-     WHERE ${likeClauses}
+     WHERE nt.normalized_topic LIKE ? ESCAPE '\\'
      LIMIT ${MAX_EXPANDED_TOPICS}`,
-    params,
+    [`%${escaped}%`],
   );
 
   return result.results.map((row) => ({
@@ -540,6 +557,8 @@ async function fetchRepresentativeVerse(
 
 async function buildMajorWitnesses(
   expandedTopics: Array<{ id: number; name: string }>,
+  semanticBooks: Array<{ book_id: number; score: number }>,
+  salienceMap: Map<string, number>,
   semanticCoords: Map<
     string,
     {
@@ -554,6 +573,12 @@ async function buildMajorWitnesses(
 ): Promise<MajorWitness[]> {
   const topicIds = expandedTopics.map((t) => t.id);
 
+  // Build book semantic score lookup from vectorize book results.
+  const bookSemanticScoreMap = new Map<number, number>();
+  for (const { book_id, score } of semanticBooks) {
+    bookSemanticScoreMap.set(book_id, score);
+  }
+
   const candidates = await aggregateWitnesses(topicIds);
 
   // Filter to qualified witnesses only.
@@ -563,9 +588,28 @@ async function buildMajorWitnesses(
       c.chapter_count >= MAJOR_WITNESS_MIN_CHAPTERS,
   );
 
+  // Score candidates with semantic signals and sort by composite score.
+  const scored = qualified.map((candidate) => {
+    const baseScore = candidate.verse_count / Math.max(candidate.chapter_count, 1);
+    const bookSemanticScore = bookSemanticScoreMap.get(candidate.book_id) ?? 0;
+
+    // Find max salience for this book across all matched topics.
+    let maxSalience = 0;
+    for (const topicId of topicIds) {
+      const sal = salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
+      if (sal > maxSalience) maxSalience = sal;
+    }
+
+    const witnessScore = baseScore + (bookSemanticScore * 0.3) + (maxSalience * 0.2);
+    return { candidate, witnessScore };
+  });
+
+  scored.sort((a, b) => b.witnessScore - a.witnessScore);
+  const topCandidates = scored.slice(0, MAX_MAJOR_WITNESSES).map((s) => s.candidate);
+
   // Build witnesses concurrently (representative verse may need D1 fallback).
   const witnesses: MajorWitness[] = await Promise.all(
-    qualified.slice(0, MAX_MAJOR_WITNESSES).map(async (candidate) => {
+    topCandidates.map(async (candidate) => {
       const matchedTopics = candidate.topic_names
         .split(',')
         .map((n) => n.trim())
@@ -697,16 +741,13 @@ async function searchNaves(
 
 // ─── Vectorize semantic search ─────────────────────────────────────────────────
 
-async function searchSemantic(
-  topic: string,
+// Accepts a pre-computed embedding vector (avoids redundant Workers AI calls).
+async function searchSemanticFromVector(
+  queryVector: number[],
   limit: number,
 ): Promise<Map<string, { book_id: number; chapter: number; verse: number; translation_id: number; score: number }>> {
-  // Generate embedding for the topic string.
-  const embeddings = await workersAi.embed([topic]);
-  if (embeddings.length === 0) return new Map();
-
   const topK = Math.min(limit * VECTORIZE_OVERFETCH_MULTIPLIER, 200);
-  const matches = await vectorize.query(embeddings[0], { topK });
+  const matches = await vectorize.query(queryVector, { topK });
   if (matches.length === 0) return new Map();
 
   // Each match metadata contains book_id, chapter, verse, translation_id.
@@ -853,32 +894,48 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
   const { topic, limit: limitArg } = args as { topic: string; limit?: number };
   const limit = Math.min(Math.max(limitArg ?? 20, 1), 50);
 
-  // Phase 1: All three paths start concurrently.
-  const stemsPromise = Promise.resolve(extractStems(topic));
-  const expandedTopicsPromise = stemsPromise.then((stems) =>
-    stems.length > 0 ? queryExpandedTopics(stems) : [],
-  );
+  // Phase 1: Embed query once, fire Nave's search concurrently.
+  const embeddingPromise = workersAi.embed([topic]);
+  const [embeddings, navesResults] = await Promise.all([
+    embeddingPromise,
+    searchNaves(topic, limit),
+  ]);
 
-  const semanticCoordsPromise = searchSemantic(topic, limit);
-  const semanticVerseMapPromise = semanticCoordsPromise.then((coords) =>
-    fetchVerseTexts(Array.from(coords.values()))
-  );
+  const queryVector = embeddings.length > 0 ? embeddings[0] : [];
 
-  const [navesResults, semanticCoords, semanticVerseMap, expandedTopics] =
-    await Promise.all([
-      searchNaves(topic, limit),
-      semanticCoordsPromise,
-      semanticVerseMapPromise,
-      expandedTopicsPromise,
-    ]);
+  // Phase 2: All Vectorize queries use same embedding, run concurrently.
+  // Graceful degradation: if topic index is not configured, searchSemanticTopics
+  // and searchSemanticBooks return [] — fall back to Nave's LIKE for witnesses.
+  const semanticCoordsPromise = queryVector.length > 0
+    ? searchSemanticFromVector(queryVector, limit)
+    : Promise.resolve(new Map<string, { book_id: number; chapter: number; verse: number; translation_id: number; score: number }>());
 
-  // Phase 2: Build major witnesses (needs expanded topics + semantic results).
+  const [semanticTopics, semanticBooks, semanticCoords] = await Promise.all([
+    queryVector.length > 0 ? searchSemanticTopics(queryVector) : Promise.resolve([]),
+    queryVector.length > 0 ? searchSemanticBooks(queryVector) : Promise.resolve([]),
+    semanticCoordsPromise,
+  ]);
+
+  const semanticVerseMap = await fetchVerseTexts(Array.from(semanticCoords.values()));
+
+  // Determine expanded topics: prefer semantic topic results; fall back to
+  // Nave's LIKE matching if topic index returned no results.
+  const expandedTopics: Array<{ id: number; name: string }> = semanticTopics.length > 0
+    ? semanticTopics
+    : await queryExpandedTopicsByLike(topic);
+
+  // Fetch salience scores for matched topics + candidate books.
+  const topicIds = expandedTopics.map((t) => t.id);
+  const candidateBookIds = semanticBooks.map((b) => b.book_id);
+  const salienceMap = await fetchSalience(topicIds, candidateBookIds);
+
+  // Phase 3 (was Phase 2): Build major witnesses using semantic topics + book scores + salience.
   const majorWitnesses =
     expandedTopics.length > 0
-      ? await buildMajorWitnesses(expandedTopics, semanticCoords, semanticVerseMap)
+      ? await buildMajorWitnesses(expandedTopics, semanticBooks, salienceMap, semanticCoords, semanticVerseMap)
       : [];
 
-  // Phase 3: Existing merge + witness interleave + match reasons.
+  // Phase 4: Existing merge + witness interleave + match reasons.
 
   // Apply consecutive verse cap to Nave's results before merge.
   const navesResultsCapped = capConsecutiveVerses(navesResults);

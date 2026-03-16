@@ -14,6 +14,7 @@ let _config: {
   accountId: string;
   databaseId: string;
   indexName: string;
+  topicIndexName: string;
 } | null = null;
 
 export function getConfig() {
@@ -25,6 +26,10 @@ export function getConfig() {
         process.env.BIBLE_ACCOUNT_ID ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? '',
       databaseId: process.env.D1_DATABASE_ID ?? '',
       indexName: process.env.VECTORIZE_INDEX_NAME ?? '',
+      topicIndexName:
+        process.env.BIBLE_TOPIC_INDEX_NAME ??
+        process.env.VECTORIZE_TOPIC_INDEX_NAME ??
+        '',
     };
   }
   return _config;
@@ -186,6 +191,32 @@ export const vectorize = {
   query: vectorizeQuery,
   upsert: vectorizeUpsert,
   deleteByIds: vectorizeDeleteByIds,
+};
+
+// ─── Vectorize Topics client ───────────────────────────────────────────────────
+
+async function vectorizeTopicsQuery(
+  vector: number[],
+  options?: { topK?: number; filter?: Record<string, string | number> }
+): Promise<VectorizeMatch[]> {
+  const { accountId, topicIndexName } = getConfig();
+  if (!topicIndexName) return [];
+
+  const vectorizeBase = `${BASE}/accounts/${accountId}/vectorize/v2/indexes/${topicIndexName}`;
+  const body: Record<string, unknown> = { vector, returnMetadata: 'all' };
+  if (options?.topK !== undefined) body['top_k'] = options.topK;
+  if (options?.filter !== undefined) body['filter'] = options.filter;
+
+  const result = await cfFetch<{ matches: VectorizeMatch[] }>(
+    `${vectorizeBase}/query`,
+    { method: 'POST', body: JSON.stringify(body) }
+  );
+
+  return result.matches;
+}
+
+export const vectorizeTopics = {
+  query: vectorizeTopicsQuery,
 };
 
 // ─── Workers AI client ────────────────────────────────────────────────────────

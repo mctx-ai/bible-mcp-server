@@ -98,12 +98,38 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
+# Vectorize Index — 'bible-topics'
+# ---------------------------------------------------------------------------
+VECTORIZE_TOPICS_INDEX_NAME="bible-topics"
+VECTORIZE_TOPICS_DIMENSIONS=768
+VECTORIZE_TOPICS_METRIC="cosine"
+
+echo "--- Vectorize Index: $VECTORIZE_TOPICS_INDEX_NAME ---"
+
+# List existing Vectorize indexes and check for a match by name.
+existing_topics_vectorize=$($WRANGLER vectorize list --json 2>/dev/null | jq -r --arg name "$VECTORIZE_TOPICS_INDEX_NAME" '.[] | select(.name == $name) | .name')
+
+if [[ -n "$existing_topics_vectorize" ]]; then
+  echo "Vectorize index '$VECTORIZE_TOPICS_INDEX_NAME' already exists. Skipping creation."
+else
+  echo "Creating Vectorize index '$VECTORIZE_TOPICS_INDEX_NAME' (dimensions=$VECTORIZE_TOPICS_DIMENSIONS, metric=$VECTORIZE_TOPICS_METRIC)..."
+  $WRANGLER vectorize create "$VECTORIZE_TOPICS_INDEX_NAME" \
+    --dimensions="$VECTORIZE_TOPICS_DIMENSIONS" \
+    --metric="$VECTORIZE_TOPICS_METRIC" \
+    --metadata-index=type:string
+  echo "Vectorize index '$VECTORIZE_TOPICS_INDEX_NAME' created."
+fi
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # Output — add these values as secrets in the mctx dashboard
 # ---------------------------------------------------------------------------
 echo "======================================================================"
 echo "Infrastructure setup complete. Add the following as secrets in the"
 echo "mctx dashboard for this server:"
 echo ""
-echo "  D1_DATABASE_ID       = $d1_database_id"
-echo "  VECTORIZE_INDEX_NAME = $VECTORIZE_INDEX_NAME"
+echo "  D1_DATABASE_ID        = $d1_database_id"
+echo "  VECTORIZE_INDEX_NAME  = $VECTORIZE_INDEX_NAME"
+echo "  VECTORIZE_TOPICS_INDEX_NAME = $VECTORIZE_TOPICS_INDEX_NAME"
 echo "======================================================================"

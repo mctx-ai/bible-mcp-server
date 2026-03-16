@@ -65,6 +65,24 @@ Violating this boundary causes Cloudflare Workers deployment failure (error 1002
 
 **Schema system:** The `T` namespace provides type-safe schema builders (`.string()`, `.number()`, `.boolean()`, etc.) with validation constraints.
 
+### Vectorize Indices
+
+The server uses two Vectorize indices for semantic search:
+
+**`bible-verses`** (155,510 vectors) — Verse embeddings for semantic search across all verses. Index name is hardcoded in `src/lib/cloudflare.ts`.
+
+**`bible-topics`** (5,385 vectors) — Topic and theme embeddings for semantic topic matching:
+- 5,319 vectors from Nave's Topical Bible categories (one per category)
+- 66 vectors from book theme summaries (thematic summaries of each Bible book's major narrative arcs)
+
+The topic index name is configurable via `BIBLE_TOPIC_INDEX_NAME` / `VECTORIZE_TOPIC_INDEX_NAME` environment variables.
+
+Used by `topical_search` tool for multi-level thematic retrieval.
+
+### Notable D1 Tables
+
+**`nave_topic_book_salience`** — Pre-computed per-book per-topic salience weights (relevance scores). Keys: `topic_id`, `book_number`. Contains normalized weights [0.0–1.0] indicating how central each topic is to each Bible book. Enables efficient major witness ranking in topical search without requiring full topic vector computation at query time.
+
 ### Entry Point
 
 `createServer()` initializes an MCP server instance. The returned `server.fetch` property is a Web Standard Fetch API handler compatible with:
@@ -137,6 +155,35 @@ npm run format:check
 
 Prettier configuration: `singleQuote: true` (in `.prettierrc`).
 
+### ETL Pipeline
+
+Run ETL scripts locally (Node.js with `tsx`) to ingest data into Cloudflare D1 and Vectorize. Scripts are additive and must run in order:
+
+**Phase 1 — Core Data:**
+```bash
+npm run data:acquire        # Download source data files
+npm run db:schema           # Create D1 schema
+npm run etl:bible           # Ingest verse text across 5 translations
+npm run etl:crossrefs       # Ingest cross-references
+npm run etl:naves           # Ingest Nave's Topical Bible (5,319 categories)
+npm run etl:strongs         # Ingest Strong's concordance and lexicon
+npm run etl:morphology      # Ingest morphological analysis
+```
+
+**Phase 2 — Search Infrastructure:**
+```bash
+npm run search:fts5         # Build FTS5 full-text index
+npm run search:embeddings   # Ingest verse embeddings into Vectorize
+```
+
+**Phase 3 — Topic Search (Additive):**
+```bash
+npm run etl:salience        # Compute per-book per-topic salience weights → nave_topic_book_salience D1 table
+npm run search:topic-embeddings  # Ingest topic and book theme embeddings into Vectorize
+```
+
+All scripts use `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` for local development.
+
 ---
 
 ## Environment Variables
@@ -151,12 +198,14 @@ The server reads Cloudflare credentials using a two-prefix fallback strategy:
 | `CLOUDFLARE_ACCOUNT_ID` | Local dev fallback |
 | `BIBLE_API_TOKEN` | mctx deployment (primary) |
 | `CLOUDFLARE_API_TOKEN` | Local dev fallback |
+| `BIBLE_TOPIC_INDEX_NAME` | Vectorize topic index name (mctx deployment, primary) |
+| `VECTORIZE_TOPIC_INDEX_NAME` | Vectorize topic index name (local dev fallback) |
 
 **`BIBLE_*` prefix** — Used when the server is deployed on the mctx platform. Set these in the mctx dashboard under your server's environment configuration.
 
-**`CLOUDFLARE_*` prefix** — Used for local development. Set these in your shell or `.env` file when running `npm run dev`.
+**`CLOUDFLARE_*` prefix** or other dev-specific prefixes — Used for local development. Set these in your shell or `.env` file when running `npm run dev`.
 
-The server always checks `BIBLE_*` first and falls back to `CLOUDFLARE_*`, so both environments work without changing code. The `scripts/` directory (ETL scripts that run locally) uses only `CLOUDFLARE_*` and is unaffected by this convention.
+The server always checks `BIBLE_*` first and falls back to alternatives, so both environments work without changing code. The `scripts/` directory (ETL scripts that run locally) uses dev-specific variable names and is unaffected by this convention.
 
 ---
 
