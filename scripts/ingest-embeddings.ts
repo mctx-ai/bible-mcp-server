@@ -71,6 +71,7 @@ const TRANSLATIONS: TranslationMeta[] = [
   { id: 3, abbreviation: 'ASV' },
   { id: 4, abbreviation: 'YLT' },
   { id: 5, abbreviation: 'DBY' },
+  { id: 6, abbreviation: 'NET' },
 ];
 
 // ---------------------------------------------------------------------------
