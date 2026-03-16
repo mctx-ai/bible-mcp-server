@@ -13,6 +13,7 @@
  */
 
 import './load-env.js';
+import { d1Etl } from '../src/lib/cloudflare-etl.js';
 
 // ---------------------------------------------------------------------------
 // DDL statements (order matters — foreign key dependencies)
@@ -247,13 +248,25 @@ function normalize(sql: string): string {
 }
 
 /**
- * Prints SQL statements to stdout for manual execution via the D1 dashboard or wrangler CLI.
+ * Executes SQL statements against the remote D1 database via wrangler.
+ * Falls back to printing if D1 credentials are not configured.
  */
 async function executeStatements(statements: string[]): Promise<void> {
-  console.log('-- Copy and execute the following SQL via the D1 dashboard or wrangler CLI:\n');
-  for (const stmt of statements) {
-    console.log(normalize(stmt) + ';\n');
+  const hasCredentials =
+    process.env.CLOUDFLARE_API_TOKEN &&
+    process.env.CLOUDFLARE_ACCOUNT_ID &&
+    process.env.D1_DATABASE_ID;
+
+  if (!hasCredentials) {
+    console.log('-- D1 credentials not found. Copy and execute the following SQL via the D1 dashboard or wrangler CLI:\n');
+    for (const stmt of statements) {
+      console.log(normalize(stmt) + ';\n');
+    }
+    return;
   }
+
+  const sql = statements.map((s) => normalize(s) + ';').join('\n') + '\n';
+  await d1Etl.batchFile(sql);
 }
 
 // ---------------------------------------------------------------------------

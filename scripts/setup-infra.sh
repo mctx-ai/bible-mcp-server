@@ -19,6 +19,26 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
+# Load .env file if present (mirrors load-env.ts behavior for bash scripts)
+# ---------------------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/../.env"
+if [[ -f "$ENV_FILE" ]]; then
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip blank lines and comments
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    # Only export KEY=VALUE lines; shell-exported vars take precedence
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      key="${BASH_REMATCH[1]}"
+      val="${BASH_REMATCH[2]}"
+      if [[ -z "${!key+x}" ]]; then
+        export "$key=$val"
+      fi
+    fi
+  done < "$ENV_FILE"
+fi
+
+# ---------------------------------------------------------------------------
 # Validate required environment variables
 # ---------------------------------------------------------------------------
 if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
@@ -115,8 +135,7 @@ else
   echo "Creating Vectorize index '$VECTORIZE_TOPICS_INDEX_NAME' (dimensions=$VECTORIZE_TOPICS_DIMENSIONS, metric=$VECTORIZE_TOPICS_METRIC)..."
   $WRANGLER vectorize create "$VECTORIZE_TOPICS_INDEX_NAME" \
     --dimensions="$VECTORIZE_TOPICS_DIMENSIONS" \
-    --metric="$VECTORIZE_TOPICS_METRIC" \
-    --metadata-index=type:string
+    --metric="$VECTORIZE_TOPICS_METRIC"
   echo "Vectorize index '$VECTORIZE_TOPICS_INDEX_NAME' created."
 fi
 
