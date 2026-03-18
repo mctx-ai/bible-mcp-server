@@ -30,7 +30,7 @@ Unlike asking your AI from general knowledge, this server gives your assistant a
 
 When you ask a Bible study question, the server queries a purpose-built database and returns structured data your AI assistant can reason about directly. The AI gets facts and definitions, not HTML pages it has to summarize.
 
-Seven tools work together: `semantic_search` for meaning-based verse discovery, `topical_search` for curated thematic research with major witnesses, `find_text` for keyword search, `concordance` for word frequency across books, `compare_translations` for side-by-side rendering, `cross_references` for tracing connections between passages, and `word_study` for original-language deep dives.
+Seven capabilities work together: meaning-based verse discovery, curated thematic research with major witnesses, keyword search, word frequency across books, side-by-side translation rendering, passage-to-passage connections, and original-language deep dives.
 
 Because each query returns structured data, the tools chain naturally in a single conversation. You can find a passage semantically, compare how all five translations render the key term, look that term up in the Greek lexicon, and pull cross-references for the most significant occurrence — each step building on the last, without leaving the thread.
 
