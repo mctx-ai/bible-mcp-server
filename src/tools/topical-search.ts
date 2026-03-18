@@ -54,7 +54,10 @@ const VECTORIZE_OVERFETCH_MULTIPLIER = 8;
 
 const MAJOR_WITNESS_MIN_VERSES = 5;
 const MAJOR_WITNESS_MIN_CHAPTERS = 2;
-const MAX_MAJOR_WITNESSES = 5;
+const MAX_MAJOR_WITNESSES = 12;
+// Witnesses scoring below this fraction of the top witness score are excluded,
+// even if fewer than MAX_MAJOR_WITNESSES have been emitted.
+const WITNESS_SCORE_CUTOFF = 0.55;
 const MAX_EXPANDED_TOPICS = 50;
 const WITNESS_INTERLEAVE_INTERVAL = 5;
 
@@ -189,7 +192,7 @@ async function searchSemanticTopicsAndBooks(
   topics: Array<{ id: number; name: string; score: number }>;
   books: Array<{ book_id: number; score: number }>;
 }> {
-  const matches = await vectorizeTopics.query(queryVector, { topK: 20 });
+  const matches = await vectorizeTopics.query(queryVector, { topK: 40 });
   if (matches.length === 0) return { topics: [], books: [] };
 
   const topics: Array<{ id: number; name: string; score: number }> = [];
@@ -211,6 +214,7 @@ async function searchSemanticTopicsAndBooks(
     }
   }
 
+  console.error(`[DEBUG] vectorize topic matches: ${topics.length} topics, ${books.length} books out of ${matches.length} total`);
   return { topics, books };
 }
 
@@ -251,19 +255,124 @@ async function fetchSalience(
 async function queryExpandedTopicsByLike(
   topic: string,
 ): Promise<Array<{ id: number; name: string }>> {
-  const escaped = topic.toLowerCase().replace(/%/g, '\\%').replace(/_/g, '\\_');
+  // Split compound phrases into individual content words so "God's
+  // faithfulness during suffering" matches topics containing any of those
+  // words. Skip short/common words to avoid overly broad matches.
+  const stopWords = new Set([
+    'the', 'and', 'for', 'but', 'not', 'with', 'from', 'that', 'this',
+    'into', 'over', 'upon', 'also', 'than', 'then', 'them', 'they',
+    'have', 'been', 'were', 'will', 'does', 'done', 'during', 'about',
+    "god's", 'gods',
+  ]);
+
+  const words = topic
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !stopWords.has(w))
+    .map((w) => w.replace(/%/g, '\\%').replace(/_/g, '\\_'));
+
+  if (words.length === 0) {
+    // Fall back to full-phrase match for single-word or very short queries.
+    const escaped = topic.toLowerCase().replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const result = await d1.query(
+      `SELECT DISTINCT nt.id, nt.topic_name
+       FROM nave_topics nt
+       WHERE nt.normalized_topic LIKE ? ESCAPE '\\'
+       LIMIT ${MAX_EXPANDED_TOPICS}`,
+      [`%${escaped}%`],
+    );
+    return result.results.map((row) => ({
+      id: row['id'] as number,
+      name: row['topic_name'] as string,
+    }));
+  }
+
+  const whereClauses = words.map(() => `nt.normalized_topic LIKE ? ESCAPE '\\'`);
+  const params = words.map((w) => `%${w}%`);
 
   const result = await d1.query(
     `SELECT DISTINCT nt.id, nt.topic_name
      FROM nave_topics nt
-     WHERE nt.normalized_topic LIKE ? ESCAPE '\\'
+     WHERE ${whereClauses.join(' OR ')}
      LIMIT ${MAX_EXPANDED_TOPICS}`,
-    [`%${escaped}%`],
+    params,
   );
 
   return result.results.map((row) => ({
     id: row['id'] as number,
     name: row['topic_name'] as string,
+  }));
+}
+
+// ─── Salience lookup for co-occurring topics ────────────────────────────────
+
+// Returns all salience entries for a set of topic IDs (no book filter).
+// Used to identify which co-occurring topics have high salience for specific books.
+async function fetchCooccurringSalience(
+  topicIds: number[],
+): Promise<Array<{ topic_id: number; book_id: number; salience: number }>> {
+  if (topicIds.length === 0) return [];
+
+  const placeholders = topicIds.map(() => '?').join(', ');
+  const result = await d1.query(
+    `SELECT topic_id, book_id, salience
+     FROM nave_topic_book_salience
+     WHERE topic_id IN (${placeholders})
+       AND salience >= 0.5
+     ORDER BY salience DESC
+     LIMIT 200`,
+    topicIds,
+  );
+
+  return result.results.map((row) => ({
+    topic_id: row['topic_id'] as number,
+    book_id: row['book_id'] as number,
+    salience: row['salience'] as number,
+  }));
+}
+
+// ─── Topic co-occurrence expansion ───────────────────────────────────────────
+
+// Given a set of seed topic IDs, finds other topics that share the most verses
+// with them. This discovers related topics like AFFLICTIONS for SUFFERING queries
+// that neither LIKE nor Vectorize can surface directly.
+const MAX_COOCCURRENCE_TOPICS = 20;
+
+async function expandTopicsByCooccurrence(
+  seedTopicIds: number[],
+): Promise<Array<{ id: number; name: string; shared_verses: number }>> {
+  if (seedTopicIds.length === 0) return [];
+
+  const placeholders = seedTopicIds.map(() => '?').join(', ');
+
+  // Find topics that share the most verses with our seed topics.
+  // Filter out overly broad topics (> 2000 total verses) like JESUS or GOD.
+  const result = await d1.query(
+    `SELECT
+       nt.id,
+       nt.topic_name,
+       COUNT(*) AS shared_verses,
+       (SELECT COUNT(*) FROM nave_topic_verses ntv3 WHERE ntv3.topic_id = ntv2.topic_id) AS total_verses
+     FROM nave_topic_verses ntv1
+     JOIN nave_topic_verses ntv2
+       ON ntv2.book_id = ntv1.book_id
+      AND ntv2.chapter = ntv1.chapter
+      AND ntv2.verse = ntv1.verse
+     JOIN nave_topics nt ON nt.id = ntv2.topic_id
+     WHERE ntv1.topic_id IN (${placeholders})
+       AND ntv2.topic_id NOT IN (${placeholders})
+     GROUP BY ntv2.topic_id
+     HAVING shared_verses >= 3
+       AND total_verses <= 2000
+     ORDER BY shared_verses DESC
+     LIMIT ${MAX_COOCCURRENCE_TOPICS}`,
+    [...seedTopicIds, ...seedTopicIds],
+  );
+
+  return result.results.map((row) => ({
+    id: row['id'] as number,
+    name: row['topic_name'] as string,
+    shared_verses: row['shared_verses'] as number,
   }));
 }
 
@@ -290,7 +399,7 @@ async function aggregateWitnesses(
       book_name: string;
       testament: string;
       verse_count: number;
-      chapter_set: Set<number>;
+      chapter_count_sum: number;
       min_chapter: number;
       max_chapter: number;
       topic_name_set: Set<string>;
@@ -316,7 +425,7 @@ async function aggregateWitnesses(
          WHERE ntv.topic_id IN (${placeholders})
          GROUP BY ntv.book_id
          ORDER BY verse_count DESC
-         LIMIT 10`,
+         LIMIT 30`,
         chunk,
       );
 
@@ -339,7 +448,7 @@ async function aggregateWitnesses(
             book_name: bookName,
             testament,
             verse_count: 0,
-            chapter_set: new Set(),
+            chapter_count_sum: 0,
             min_chapter: minChapter,
             max_chapter: maxChapter,
             topic_name_set: new Set(),
@@ -351,10 +460,11 @@ async function aggregateWitnesses(
         agg.min_chapter = Math.min(agg.min_chapter, minChapter);
         agg.max_chapter = Math.max(agg.max_chapter, maxChapter);
 
-        // Approximate chapter set from min/max range for cross-chunk merging.
-        for (let c = minChapter; c <= maxChapter; c++) {
-          agg.chapter_set.add(c);
-        }
+        // Use the actual distinct chapter count from SQL rather than
+        // approximating from min/max range (which inflates the count for
+        // books with sparse topic coverage like Psalms).
+        const chapterCount = row['chapter_count'] as number;
+        agg.chapter_count_sum += chapterCount;
 
         for (const name of topicNames) {
           if (name) agg.topic_name_set.add(name);
@@ -370,7 +480,7 @@ async function aggregateWitnesses(
       book_name: agg.book_name,
       testament: agg.testament,
       verse_count: agg.verse_count,
-      chapter_count: agg.chapter_set.size,
+      chapter_count: agg.chapter_count_sum,
       min_chapter: agg.min_chapter,
       max_chapter: agg.max_chapter,
       topic_names: Array.from(agg.topic_name_set).join(','),
@@ -541,8 +651,9 @@ async function fetchRepresentativeVerse(
 
 async function buildMajorWitnesses(
   expandedTopics: Array<{ id: number; name: string }>,
+  salienceTopicIds: number[],
+  topicRelevanceWeight: Map<number, number>,
   semanticBooks: Array<{ book_id: number; score: number }>,
-  salienceMap: Map<string, number>,
   semanticCoords: Map<
     string,
     {
@@ -565,6 +676,28 @@ async function buildMajorWitnesses(
 
   const candidates = await aggregateWitnesses(topicIds);
 
+  // Count semantic verse hits per book — direct embedding-based relevance signal.
+  const semanticHitsPerBook = new Map<number, number>();
+  for (const coord of semanticCoords.values()) {
+    semanticHitsPerBook.set(
+      coord.book_id,
+      (semanticHitsPerBook.get(coord.book_id) ?? 0) + 1,
+    );
+  }
+
+  // DEBUG: log candidate details
+  console.error(`[DEBUG] semanticHitsPerBook: ${Array.from(semanticHitsPerBook.entries()).map(([k, v]) => `${k}:${v}`).join(', ')}`);
+  console.error(`[DEBUG] expandedTopics count: ${expandedTopics.length}, topicNames: ${expandedTopics.slice(0, 15).map(t => t.name).join(', ')}`);
+  console.error(`[DEBUG] candidates (${candidates.length} total): ${candidates.map(c => `${c.book_name}:vc=${c.verse_count}`).join(' | ')}`);
+  console.error(`[DEBUG] Job in candidates: ${candidates.find(c => c.book_name === 'Job') ? 'YES' : 'NO'}`);
+
+  // Fetch salience using the broad topic set (including co-occurring topics) and
+  // actual candidate book IDs. The broad set ensures we capture salience signals
+  // from related categories (e.g., AFFLICTIONS for SUFFERING queries) that the
+  // narrow seed topics alone would miss.
+  const candidateBookIds = candidates.map((c) => c.book_id);
+  const salienceMap = await fetchSalience(salienceTopicIds, candidateBookIds);
+
   // Filter to qualified witnesses only.
   const qualified = candidates.filter(
     (c) =>
@@ -572,24 +705,62 @@ async function buildMajorWitnesses(
       c.chapter_count >= MAJOR_WITNESS_MIN_CHAPTERS,
   );
 
-  // Score candidates with semantic signals and sort by composite score.
+  // Score candidates using five complementary signals:
+  //   1. Salience (pre-computed topical centrality) — dominant when available
+  //   2. Chapter coverage ratio (matched chapters / total book chapters) —
+  //      rewards books where the topic pervades the whole text
+  //   3. log2(verse_count) — breadth tiebreaker
+  //   4. Book semantic score — Vectorize book-level embedding match
+  //   5. Semantic verse hits — how many of the top verse-level embedding
+  //      results land in this book (direct query-relevance signal)
   const scored = qualified.map((candidate) => {
-    const baseScore = candidate.verse_count / Math.max(candidate.chapter_count, 1);
     const bookSemanticScore = bookSemanticScoreMap.get(candidate.book_id) ?? 0;
 
-    // Find max salience for this book across all matched topics.
-    let maxSalience = 0;
-    for (const topicId of topicIds) {
+    // Sum relevance-weighted salience across all seed topics for this book.
+    // Each topic's salience contribution is multiplied by its relevance to
+    // the query (1.0 for LIKE matches, semantic score for Vectorize topics).
+    // This prevents low-relevance semantic topics (e.g., JEHOASH for "end
+    // times prophecy") from dominating the score for specific books (2 Kings).
+    let totalSalience = 0;
+    for (const topicId of salienceTopicIds) {
       const sal = salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
-      if (sal > maxSalience) maxSalience = sal;
+      const weight = topicRelevanceWeight.get(topicId) ?? 0.5;
+      totalSalience += sal * weight;
     }
 
-    const witnessScore = baseScore + (bookSemanticScore * 0.3) + (maxSalience * 0.2);
+    // Chapter coverage: what fraction of this book's chapters contain
+    // topical verses? High coverage = the topic is central to the book.
+    const totalBookChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? 1;
+    const chapterCoverage = candidate.chapter_count / totalBookChapters;
+
+    // Semantic verse hits: number of top Vectorize verse matches in this
+    // book. A book with many semantically similar verses is directly
+    // relevant to the query even when Nave's topic expansion misses it.
+    const semVerseHits = semanticHitsPerBook.get(candidate.book_id) ?? 0;
+
+    const verseBreadth = Math.log2(candidate.verse_count + 1);
+    const witnessScore =
+      totalSalience * 3.0 +
+      chapterCoverage * 4.0 +
+      verseBreadth +
+      bookSemanticScore * 3.0 +
+      semVerseHits * 1.5;
     return { candidate, witnessScore };
   });
 
   scored.sort((a, b) => b.witnessScore - a.witnessScore);
-  const topCandidates = scored.slice(0, MAX_MAJOR_WITNESSES).map((s) => s.candidate);
+  // DEBUG: log scored results
+  console.error(`[DEBUG] scored (top 15): ${scored.slice(0, 15).map(s => `${s.candidate.book_name}: ws=${s.witnessScore.toFixed(2)}, vc=${s.candidate.verse_count}, cc=${s.candidate.chapter_count}, sem=${(bookSemanticScoreMap.get(s.candidate.book_id) ?? 0).toFixed(3)}, sal=${(() => { let tot = 0; for (const tid of salienceTopicIds) { tot += salienceMap.get(s.candidate.book_id + ':' + tid) ?? 0; } return tot.toFixed(3); })()}, svh=${semanticHitsPerBook.get(s.candidate.book_id) ?? 0}`).join(' | ')}`);
+  // Apply both a hard cap and a relative score cutoff so that:
+  // - Queries with a clear top-N (large score gaps) return fewer witnesses
+  // - Queries with many similarly-scored books (like "end times prophecy")
+  //   return more witnesses to capture all relevant books
+  const topScore = scored.length > 0 ? scored[0].witnessScore : 0;
+  const cutoff = topScore * WITNESS_SCORE_CUTOFF;
+  const topCandidates = scored
+    .slice(0, MAX_MAJOR_WITNESSES)
+    .filter((s) => s.witnessScore >= cutoff)
+    .map((s) => s.candidate);
 
   // Build witnesses concurrently (representative verse may need D1 fallback).
   const witnesses: MajorWitness[] = await Promise.all(
@@ -899,28 +1070,108 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
     ? searchSemanticTopicsAndBooks(queryVector)
     : Promise.resolve({ topics: [] as Array<{ id: number; name: string; score: number }>, books: [] as Array<{ book_id: number; score: number }> });
 
-  const [{ topics: semanticTopics, books: semanticBooks }, semanticCoords] = await Promise.all([
+  // Run LIKE topic expansion in parallel with Vectorize queries to avoid
+  // sequential latency. Both sources are needed for comprehensive coverage.
+  const likeTopicsPromise = queryExpandedTopicsByLike(topic);
+
+  const [{ topics: semanticTopics, books: semanticBooks }, semanticCoords, likeTopics] = await Promise.all([
     semanticTopicsAndBooksPromise,
     semanticCoordsPromise,
+    likeTopicsPromise,
   ]);
+
+  console.error(`[DEBUG] semanticTopics: ${semanticTopics.map(t => `${t.name}(${t.id},s=${t.score.toFixed(3)})`).join(', ')}`);
+  console.error(`[DEBUG] likeTopics: ${likeTopics.map(t => `${t.name}(${t.id})`).join(', ')}`);
 
   const semanticVerseMap = await fetchVerseTexts(Array.from(semanticCoords.values()));
 
-  // Determine expanded topics: prefer semantic topic results; fall back to
-  // Nave's LIKE matching if topic index returned no results.
-  const expandedTopics: Array<{ id: number; name: string }> = semanticTopics.length > 0
-    ? semanticTopics
-    : await queryExpandedTopicsByLike(topic);
+  // Merge semantic topics with LIKE-based topics for comprehensive coverage.
+  // Semantic topics find conceptually related categories (e.g., SUFFERING, PAIN)
+  // while LIKE finds keyword matches (e.g., AFFLICTIONS AND ADVERSITIES).
+  // Both are needed: narrow semantic topics alone miss rich keyword categories.
+  const topicById = new Map<number, { id: number; name: string }>();
+  for (const t of semanticTopics) topicById.set(t.id, t);
+  for (const t of likeTopics) {
+    if (!topicById.has(t.id)) topicById.set(t.id, t);
+  }
+  const expandedTopics: Array<{ id: number; name: string }> = Array.from(topicById.values());
 
-  // Fetch salience scores for matched topics + candidate books.
-  const topicIds = expandedTopics.map((t) => t.id);
-  const candidateBookIds = semanticBooks.map((b) => b.book_id);
-  const salienceMap = await fetchSalience(topicIds, candidateBookIds);
+  // Expand via co-occurrence to discover related categories (e.g., AFFLICTIONS
+  // for SUFFERING queries). Co-occurring topics with high salience for specific
+  // books are included in the aggregation; all co-occurring topics contribute
+  // to salience scoring.
+  const seedTopicIds = expandedTopics.map((t) => t.id);
+  const cooccurringTopics = await expandTopicsByCooccurrence(seedTopicIds);
+  console.error(`[DEBUG] cooccurringTopics: ${cooccurringTopics.map(t => `${t.name}(${t.id})`).join(', ')}`);
+
+  // Fetch salience for co-occurring topics to identify which are topically
+  // concentrated (high salience = canonical for a specific book) vs spread
+  // evenly (generic topics that would inflate all books equally).
+  const coTopicIds = cooccurringTopics.map((t) => t.id);
+  const coSalienceEntries = coTopicIds.length > 0
+    ? await fetchCooccurringSalience(coTopicIds)
+    : [];
+
+  // Include co-occurring topics in aggregation ONLY if they are among the
+  // top co-occurring topics by shared verse count AND have high salience
+  // for at least one book. This dual filter ensures we include AFFLICTIONS
+  // (high overlap with SUFFERING + high salience for Job) but exclude
+  // generic categories like MINISTER or COMMANDMENTS (high salience but
+  // low thematic overlap with the query).
+  const highSalienceTopicIds = new Set<number>();
+  for (const entry of coSalienceEntries) {
+    highSalienceTopicIds.add(entry.topic_id);
+  }
+
+  // Promote co-occurring topics with high salience into the aggregation.
+  // Co-occurring topics are already sorted by shared verse count (most
+  // overlapping first), so the first few are the most thematically relevant.
+  // Cap at 3 to avoid inflating the topic set with loosely related categories.
+  let promoted = 0;
+  const MAX_PROMOTED = 3;
+  for (const t of cooccurringTopics) {
+    if (promoted >= MAX_PROMOTED) break;
+    if (highSalienceTopicIds.has(t.id) && !topicById.has(t.id)) {
+      topicById.set(t.id, t);
+      promoted++;
+    }
+  }
+
+  // Rebuild expandedTopics to include promoted co-occurring topics.
+  const finalExpandedTopics: Array<{ id: number; name: string }> = Array.from(topicById.values());
+
+  // Only seed topics (semantic + LIKE) contribute to salience scoring.
+  // Co-occurring topics are used for verse aggregation but NOT for salience,
+  // because they introduce noise (e.g., MINISTER inflating 2 Timothy for
+  // a "suffering" query).
+  //
+  // Each seed topic carries a relevance weight:
+  //   - LIKE-matched topics: 1.0 (direct keyword match)
+  //   - Semantic-only topics: their Vectorize similarity score (0-1)
+  // This prevents low-relevance semantic topics (e.g., JEHOASH for "end
+  // times prophecy") from inflating salience for specific books.
+  const salienceTopicIds = seedTopicIds;
+  const likeTopicIdSet = new Set(likeTopics.map((t) => t.id));
+  const semanticScoreById = new Map<number, number>();
+  for (const t of semanticTopics) {
+    semanticScoreById.set(t.id, t.score);
+  }
+  const topicRelevanceWeight = new Map<number, number>();
+  for (const tid of seedTopicIds) {
+    if (likeTopicIdSet.has(tid)) {
+      topicRelevanceWeight.set(tid, 1.0);
+    } else {
+      topicRelevanceWeight.set(tid, semanticScoreById.get(tid) ?? 0.5);
+    }
+  }
+
+  console.error(`[DEBUG] finalExpandedTopics: ${finalExpandedTopics.map(t => t.name).join(', ')}`);
+  console.error(`[DEBUG] promoted co-occurring: ${promoted}`);
 
   // Phase 3 (was Phase 2): Build major witnesses using semantic topics + book scores + salience.
   const majorWitnesses =
-    expandedTopics.length > 0
-      ? await buildMajorWitnesses(expandedTopics, semanticBooks, salienceMap, semanticCoords, semanticVerseMap)
+    finalExpandedTopics.length > 0
+      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap)
       : [];
 
   // Phase 4: Existing merge + witness interleave + match reasons.

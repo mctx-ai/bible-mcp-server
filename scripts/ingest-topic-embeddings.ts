@@ -13,8 +13,8 @@
  *   book-{book_id}      — book summary string (66 books)
  *
  * Metadata:
- *   { type: 'topic', topic_id: N }
- *   { type: 'book_summary', book_id: N }
+ *   { type: 'topic', topic_id: N, name: '<topic_name>' }
+ *   { type: 'book_summary', book_id: N, name: '<book_name>' }
  *
  * Text formats:
  *   Topic: "SUFFERING: affliction, patience, trials, persecution, tribulation"
@@ -354,7 +354,7 @@ function buildTopicTexts(
       records.push({
         id: `topic-${topic.id}`,
         text: topic.topic_name,
-        metadata: { type: 'topic', topic_id: topic.id },
+        metadata: { type: 'topic', topic_id: topic.id, name: topic.topic_name },
       });
       continue;
     }
@@ -385,7 +385,7 @@ function buildTopicTexts(
     records.push({
       id: `topic-${topic.id}`,
       text,
-      metadata: { type: 'topic', topic_id: topic.id },
+      metadata: { type: 'topic', topic_id: topic.id, name: topic.topic_name },
     });
   }
 
@@ -439,7 +439,7 @@ function buildBookTexts(
     records.push({
       id: `book-${book.id}`,
       text,
-      metadata: { type: 'book_summary', book_id: book.id },
+      metadata: { type: 'book_summary', book_id: book.id, name: book.name },
     });
   }
 
