@@ -1,5 +1,16 @@
 import { describe, test, expect } from 'vitest';
 import server from './index.js';
+import {
+  buildWhyThisBookMatters,
+  buildWitnessMatchReason,
+  buildNarrativeReason,
+  buildThemesMatched,
+  toThemeLabel,
+  clusterToPassageRanges,
+  isConsolationQuery,
+  computeQueryAlignmentScore,
+  buildQueryAlignmentNote,
+} from './tools/topical-search.js';
 
 // Helper to create JSON-RPC 2.0 request
 function createRequest(method: string, params: Record<string, unknown> = {}) {
@@ -664,7 +675,7 @@ describe('Tool description routing validation', () => {
       (t: { name: string }) => t.name === 'semantic_search',
     );
     expect(semanticTool).toBeDefined();
-    expect(semanticTool.description.toLowerCase()).toContain('prefer topical_search');
+    expect(semanticTool.description.toLowerCase()).toContain('use topical_search instead');
   });
 
   test('topical_search description contains "what does the Bible say" pattern', async () => {
@@ -1041,6 +1052,821 @@ describe.skipIf(!process.env.CLOUDFLARE_ACCOUNT_ID)(
     );
   },
 );
+
+// ─── Genre-Aware Explanation Template Unit Tests ──────────────────────────────
+//
+// These tests verify that buildWhyThisBookMatters, buildWitnessMatchReason, and
+// buildNarrativeReason produce genre-appropriate natural-language output.
+// They do NOT call the Cloudflare API — all inputs are constructed inline.
+
+describe('Genre-aware explanation templates', () => {
+  // Minimal WitnessCandidate factory for testing.
+  function makeCandidate(bookName: string, overrides?: Partial<{
+    book_id: number;
+    testament: string;
+    verse_count: number;
+    chapter_count: number;
+    min_chapter: number;
+    max_chapter: number;
+    topic_names: string;
+  }>) {
+    return {
+      book_id: 1,
+      book_name: bookName,
+      testament: 'OT',
+      verse_count: 50,
+      chapter_count: 10,
+      min_chapter: 1,
+      max_chapter: 10,
+      topic_names: 'SUFFERING, AFFLICTION',
+      ...overrides,
+    };
+  }
+
+  const emptyMap = new Map<string, number>();
+  const emptyTopics: Array<{ id: number; name: string }> = [];
+  const emptyIds: number[] = [];
+
+  describe('buildWhyThisBookMatters', () => {
+    test('Poetry genre (Psalms) uses devotional voice template', () => {
+      const result = buildWhyThisBookMatters(
+        makeCandidate('Psalms'),
+        emptyMap,
+        emptyIds,
+        emptyTopics,
+        ['lament', 'praise'],
+      );
+      expect(result).toContain('Psalms');
+      expect(result).toMatch(/voices|prayer|lament|praise|trust/i);
+    });
+
+    test('Wisdom genre (Job) uses wisdom reflection template', () => {
+      const result = buildWhyThisBookMatters(
+        makeCandidate('Job'),
+        emptyMap,
+        emptyIds,
+        emptyTopics,
+        ['suffering', 'endurance'],
+      );
+      expect(result).toContain('Job');
+      expect(result).toMatch(/wisdom|reflection|dialogue|instruction/i);
+    });
+
+    test('Prophecy genre (Isaiah) uses prophetic proclamation template', () => {
+      const result = buildWhyThisBookMatters(
+        makeCandidate('Isaiah'),
+        emptyMap,
+        emptyIds,
+        emptyTopics,
+        ['comfort', 'restoration'],
+      );
+      expect(result).toContain('Isaiah');
+      expect(result).toMatch(/prophetic|judgment|comfort|restoration|promise/i);
+    });
+
+    test('Epistle genre (Romans) uses doctrinal teaching template', () => {
+      const result = buildWhyThisBookMatters(
+        makeCandidate('Romans'),
+        emptyMap,
+        emptyIds,
+        emptyTopics,
+        ['justification', 'faith'],
+      );
+      expect(result).toContain('Romans');
+      expect(result).toMatch(/teaches|doctrinal|pastoral/i);
+    });
+
+    test('Gospel genre (John) uses life-and-ministry template', () => {
+      const result = buildWhyThisBookMatters(
+        makeCandidate('John'),
+        emptyMap,
+        emptyIds,
+        emptyTopics,
+        ['eternal life', 'faith'],
+      );
+      expect(result).toContain('John');
+      expect(result).toMatch(/life|teaching|ministry|Jesus|Christ/i);
+    });
+
+    test('Apocalyptic genre (Revelation) uses divine victory template', () => {
+      const result = buildWhyThisBookMatters(
+        makeCandidate('Revelation'),
+        emptyMap,
+        emptyIds,
+        emptyTopics,
+        ['judgment', 'restoration'],
+      );
+      expect(result).toContain('Revelation');
+      expect(result).toMatch(/divine victory|cosmic|restoration|apocalyptic/i);
+    });
+
+    test('distinct genres produce meaningfully different output', () => {
+      const themes = ['suffering'];
+      const psalmResult = buildWhyThisBookMatters(
+        makeCandidate('Psalms'),
+        emptyMap, emptyIds, emptyTopics, themes,
+      );
+      const jobResult = buildWhyThisBookMatters(
+        makeCandidate('Job'),
+        emptyMap, emptyIds, emptyTopics, themes,
+      );
+      const isaiahResult = buildWhyThisBookMatters(
+        makeCandidate('Isaiah'),
+        emptyMap, emptyIds, emptyTopics, themes,
+      );
+      const romansResult = buildWhyThisBookMatters(
+        makeCandidate('Romans'),
+        emptyMap, emptyIds, emptyTopics, themes,
+      );
+      const johnResult = buildWhyThisBookMatters(
+        makeCandidate('John'),
+        emptyMap, emptyIds, emptyTopics, themes,
+      );
+
+      // All five should be distinct strings.
+      const outputs = [psalmResult, jobResult, isaiahResult, romansResult, johnResult];
+      const unique = new Set(outputs);
+      expect(unique.size).toBe(5);
+    });
+
+    test('output does not contain database-report phrase "concentrates on ... topical references spanning"', () => {
+      const books = ['Job', 'Psalms', 'Isaiah', 'Romans', 'John', 'Revelation', 'Genesis'];
+      for (const book of books) {
+        const result = buildWhyThisBookMatters(
+          makeCandidate(book),
+          emptyMap, emptyIds, emptyTopics, ['faith'],
+        );
+        expect(result).not.toMatch(/concentrates on .+, with \d+ topical references spanning/);
+      }
+    });
+  });
+
+  describe('buildWitnessMatchReason', () => {
+    test('Poetry genre (Psalms) mentions prayer or lament', () => {
+      const result = buildWitnessMatchReason(
+        makeCandidate('Psalms'),
+        undefined,
+        ['lament', 'trust'],
+      );
+      expect(result).toContain('Psalms');
+      expect(result).toMatch(/prayer|lament|praise|trust/i);
+    });
+
+    test('Epistle genre (Ephesians) mentions teaching or doctrinal', () => {
+      const result = buildWitnessMatchReason(
+        makeCandidate('Ephesians'),
+        undefined,
+        ['grace', 'faith'],
+      );
+      expect(result).toContain('Ephesians');
+      expect(result).toMatch(/teaches|doctrinal|pastoral/i);
+    });
+
+    test('Prophecy genre (Jeremiah) mentions proclamation or promise', () => {
+      const result = buildWitnessMatchReason(
+        makeCandidate('Jeremiah'),
+        undefined,
+        ['exile', 'restoration'],
+      );
+      expect(result).toContain('Jeremiah');
+      expect(result).toMatch(/prophetic|proclamation|judgment|promise|restoration/i);
+    });
+
+    test('Gospel genre with narrative uses life-and-ministry language', () => {
+      const result = buildWitnessMatchReason(
+        makeCandidate('Luke'),
+        'Passion',
+        ['redemption', 'sacrifice'],
+      );
+      expect(result).toContain('Luke');
+      expect(result).toMatch(/life|ministry|Jesus|Gospel/i);
+    });
+
+    test('History genre narrative uses story-arc language', () => {
+      const result = buildWitnessMatchReason(
+        makeCandidate('1 Samuel'),
+        'David',
+        ['kingship'],
+      );
+      expect(result).toContain('1 Samuel');
+      expect(result).toMatch(/narrative|historical|story/i);
+    });
+  });
+
+  describe('buildNarrativeReason', () => {
+    test('returns undefined when no narrative', () => {
+      const result = buildNarrativeReason(undefined, makeCandidate('Genesis'));
+      expect(result).toBeUndefined();
+    });
+
+    test('History genre narrative uses historical story arc language', () => {
+      const result = buildNarrativeReason(
+        'Joseph',
+        makeCandidate('Genesis', { min_chapter: 37, max_chapter: 50 }),
+        ['providence', 'faithfulness'],
+      );
+      expect(result).toBeDefined();
+      expect(result).toContain('Joseph');
+      expect(result).toMatch(/historical|narrative|story/i);
+    });
+
+    test('Gospel genre narrative uses life-and-ministry language', () => {
+      const result = buildNarrativeReason(
+        'Passion',
+        makeCandidate('Matthew', { min_chapter: 26, max_chapter: 28 }),
+        ['atonement', 'resurrection'],
+      );
+      expect(result).toBeDefined();
+      expect(result).toMatch(/life|ministry|Jesus|Gospel/i);
+    });
+
+    test('narrative_reason includes chapter range in readable form', () => {
+      const result = buildNarrativeReason(
+        'Moses',
+        makeCandidate('Exodus', { min_chapter: 1, max_chapter: 15 }),
+        ['deliverance'],
+      );
+      expect(result).toBeDefined();
+      expect(result).toContain('Exodus');
+      expect(result).toMatch(/1/);
+      expect(result).toMatch(/15/);
+    });
+  });
+});
+
+// ─── Theme Label Mapping Unit Tests ───────────────────────────────────────────
+//
+// These tests verify that buildThemesMatched transforms raw Nave's topic names
+// into user-facing labels, and that toThemeLabel falls back gracefully for
+// unmapped topics. No Cloudflare API calls are made.
+
+describe('Theme label mapping', () => {
+  function makeCandidate(topicNames: string) {
+    return {
+      book_id: 1,
+      book_name: 'Romans',
+      testament: 'NT',
+      verse_count: 100,
+      chapter_count: 16,
+      min_chapter: 1,
+      max_chapter: 16,
+      topic_names: topicNames,
+    };
+  }
+
+  const emptyMap = new Map<string, number>();
+  const emptyIds: number[] = [];
+
+  describe('toThemeLabel', () => {
+    test('maps AFFLICTIONS AND ADVERSITIES to affliction', () => {
+      expect(toThemeLabel('AFFLICTIONS AND ADVERSITIES')).toBe('affliction');
+    });
+
+    test('maps UNFAITHFULNESS to unfaithfulness', () => {
+      expect(toThemeLabel('UNFAITHFULNESS')).toBe('unfaithfulness');
+    });
+
+    test('maps FAITHFULNESS to faithfulness', () => {
+      expect(toThemeLabel('FAITHFULNESS')).toBe('faithfulness');
+    });
+
+    test('maps CHURCH to the church', () => {
+      expect(toThemeLabel('CHURCH')).toBe('the church');
+    });
+
+    test('maps WORKS to works', () => {
+      expect(toThemeLabel('WORKS')).toBe('works');
+    });
+
+    test('maps SUFFERING to suffering', () => {
+      expect(toThemeLabel('SUFFERING')).toBe('suffering');
+    });
+
+    test('maps HOLY SPIRIT to the Holy Spirit', () => {
+      expect(toThemeLabel('HOLY SPIRIT')).toBe('the Holy Spirit');
+    });
+
+    test('maps KINGDOM OF GOD to the kingdom of God', () => {
+      expect(toThemeLabel('KINGDOM OF GOD')).toBe('the kingdom of God');
+    });
+
+    test('falls back to lowercase for unmapped topic', () => {
+      expect(toThemeLabel('PREDESTINATION')).toBe('predestination');
+    });
+
+    test('fallback replaces " AND " with " and " in unmapped topic', () => {
+      expect(toThemeLabel('SIGNS AND WONDERS')).toBe('signs and wonders');
+    });
+
+    test('fallback handles multi-word unmapped topic', () => {
+      expect(toThemeLabel('SECOND COMING')).toBe('second coming');
+    });
+  });
+
+  describe('buildThemesMatched', () => {
+    test('maps matched topic names to user-facing labels', () => {
+      const candidate = makeCandidate('SUFFERING, FAITHFULNESS, CHURCH');
+      const expandedTopics = [
+        { id: 1, name: 'SUFFERING' },
+        { id: 2, name: 'FAITHFULNESS' },
+        { id: 3, name: 'CHURCH' },
+      ];
+      const result = buildThemesMatched(candidate, expandedTopics, emptyMap, emptyIds);
+      expect(result).toContain('suffering');
+      expect(result).toContain('faithfulness');
+      expect(result).toContain('the church');
+      expect(result).not.toContain('SUFFERING');
+      expect(result).not.toContain('FAITHFULNESS');
+      expect(result).not.toContain('CHURCH');
+    });
+
+    test('fallback maps unmatched candidate topics to user-facing labels', () => {
+      const candidate = makeCandidate('AFFLICTIONS AND ADVERSITIES, UNFAITHFULNESS, WORKS');
+      // No expanded topics match, so fallback returns first 5 of candidate topics.
+      const result = buildThemesMatched(candidate, [], emptyMap, emptyIds);
+      expect(result).toContain('affliction');
+      expect(result).toContain('unfaithfulness');
+      expect(result).toContain('works');
+      expect(result).not.toContain('AFFLICTIONS AND ADVERSITIES');
+    });
+
+    test('fallback applies lowercase-and-clean for unmapped topics', () => {
+      const candidate = makeCandidate('PREDESTINATION, SIGNS AND WONDERS');
+      const result = buildThemesMatched(candidate, [], emptyMap, emptyIds);
+      expect(result).toContain('predestination');
+      expect(result).toContain('signs and wonders');
+    });
+
+    test('scoring uses original names — sorted order reflects salience, labels are output only', () => {
+      const candidate = makeCandidate('SUFFERING, FAITH, HOPE');
+      const expandedTopics = [
+        { id: 10, name: 'SUFFERING' },
+        { id: 11, name: 'FAITH' },
+        { id: 12, name: 'HOPE' },
+      ];
+      // Give FAITH highest salience, then HOPE, then SUFFERING.
+      const salienceMap = new Map<string, number>([
+        ['1:10', 0.2], // SUFFERING
+        ['1:11', 0.9], // FAITH
+        ['1:12', 0.5], // HOPE
+      ]);
+      const salienceTopicIds = [10, 11, 12];
+      const result = buildThemesMatched(candidate, expandedTopics, salienceMap, salienceTopicIds);
+      // Should be sorted by salience descending: faith, hope, suffering.
+      expect(result[0]).toBe('faith');
+      expect(result[1]).toBe('hope');
+      expect(result[2]).toBe('suffering');
+    });
+  });
+});
+
+// ─── Genre-Aware Clustering Unit Tests ────────────────────────────────────────
+//
+// These tests verify that clusterToPassageRanges applies genre-specific
+// strategies and that isConsolationQuery correctly identifies comfort/hope
+// queries. No Cloudflare API calls are made.
+
+describe('Genre-aware clustering (clusterToPassageRanges)', () => {
+  // Build a realistic set of AnchorChapterRows spanning a book.
+  function makeRows(chapters: Array<{ chapter: number; hit_count: number }>): Array<{
+    book_id: number;
+    chapter: number;
+    min_verse: number;
+    max_verse: number;
+    hit_count: number;
+  }> {
+    return chapters.map(({ chapter, hit_count }) => ({
+      book_id: 1,
+      chapter,
+      min_verse: 1,
+      max_verse: 20,
+      hit_count,
+    }));
+  }
+
+  describe('Poetry genre — individual chapters, no consecutive merging', () => {
+    test('returns individual chapter references for Psalms, not spans', () => {
+      // Chapters 22, 23, 24 are dense — density clustering would merge them.
+      // Poetry strategy should return them as individual references.
+      const rows = makeRows([
+        { chapter: 22, hit_count: 10 },
+        { chapter: 23, hit_count: 8 },
+        { chapter: 24, hit_count: 6 },
+        { chapter: 51, hit_count: 12 },
+        { chapter: 119, hit_count: 15 },
+      ]);
+      const result = clusterToPassageRanges(rows, 'Psalms', 150, 'Poetry');
+      // All passages must be single-chapter references (no "-" range).
+      for (const passage of result) {
+        expect(passage).not.toMatch(/Psalms \d+-\d+$/);
+      }
+      // Should return up to 3 individual chapters.
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.length).toBeLessThanOrEqual(3);
+    });
+
+    test('Poetry returns the 3 densest chapters (not just sequential)', () => {
+      const rows = makeRows([
+        { chapter: 1, hit_count: 2 },
+        { chapter: 22, hit_count: 5 },
+        { chapter: 51, hit_count: 9 },
+        { chapter: 103, hit_count: 7 },
+        { chapter: 119, hit_count: 4 },
+      ]);
+      const result = clusterToPassageRanges(rows, 'Psalms', 150, 'Poetry');
+      // Top 3 by hit count: chapters 51, 103, 22 — in canonical order.
+      expect(result).toContain('Psalms 51');
+      expect(result).toContain('Psalms 103');
+      expect(result).toContain('Psalms 22');
+    });
+  });
+
+  describe('Narrative genre — arc-based (entry/crisis/resolution)', () => {
+    test('History genre produces references spanning beginning, middle, and end', () => {
+      // Genesis has 50 chapters. Arc thirds: 1-17, 18-34, 35-50.
+      const rows = makeRows([
+        { chapter: 2, hit_count: 8 },   // entry arc
+        { chapter: 22, hit_count: 10 },  // crisis arc
+        { chapter: 45, hit_count: 7 },   // resolution arc
+        { chapter: 37, hit_count: 6 },   // resolution arc
+      ]);
+      const result = clusterToPassageRanges(rows, 'Genesis', 50, 'History');
+      expect(result.length).toBeGreaterThan(0);
+      // Should reference both early and late chapters.
+      const hasEarly = result.some((p) => /Genesis [1-9]/.test(p) || /Genesis 1[0-7]/.test(p));
+      const hasLate = result.some((p) => /Genesis [34][0-9]/.test(p) || /Genesis 5[0-9]/.test(p));
+      expect(hasEarly).toBe(true);
+      expect(hasLate).toBe(true);
+    });
+
+    test('Gospel genre uses arc strategy', () => {
+      // Matthew has 28 chapters. Arc thirds: 1-10, 11-19, 20-28.
+      const rows = makeRows([
+        { chapter: 5, hit_count: 12 },  // entry arc (Sermon on the Mount)
+        { chapter: 16, hit_count: 9 },  // crisis arc
+        { chapter: 26, hit_count: 11 }, // resolution arc (Passion narrative)
+      ]);
+      const result = clusterToPassageRanges(rows, 'Matthew', 28, 'Gospel');
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.some((p) => p.includes('Matthew'))).toBe(true);
+    });
+
+    test('Narrative arc produces different result than density clustering for same data', () => {
+      // Dense cluster is at chapters 22-24 (middle), but arc strategy should
+      // also include entry (ch 2) and resolution (ch 45).
+      const rows = makeRows([
+        { chapter: 2, hit_count: 3 },
+        { chapter: 22, hit_count: 10 },
+        { chapter: 23, hit_count: 9 },
+        { chapter: 24, hit_count: 8 },
+        { chapter: 45, hit_count: 3 },
+      ]);
+      const narrative = clusterToPassageRanges(rows, 'Genesis', 50, 'History');
+      const density = clusterToPassageRanges(rows, 'Genesis', 50, 'Epistle'); // use Epistle for plain density
+      // Narrative result includes arc-aware references; density result collapses the dense cluster.
+      expect(narrative).not.toEqual(density);
+    });
+  });
+
+  describe('Prophecy genre — consolation bias for comfort/hope queries', () => {
+    test('consolation query biases toward latter half of prophetic book', () => {
+      // Isaiah has 66 chapters. Midpoint = 33. Consolation is chapters 34-66.
+      const rows = makeRows([
+        { chapter: 5, hit_count: 8 },    // judgment section (first half)
+        { chapter: 40, hit_count: 10 },  // consolation section (second half)
+        { chapter: 53, hit_count: 12 },  // consolation section (second half)
+        { chapter: 60, hit_count: 9 },   // consolation section (second half)
+      ]);
+      const comfort = clusterToPassageRanges(rows, 'Isaiah', 66, 'Prophecy', 'comfort in affliction');
+      // Should prefer consolation chapters (>33) over judgment chapters.
+      const hasConsolation = comfort.some((p) => {
+        const match = p.match(/Isaiah (\d+)/);
+        return match && parseInt(match[1], 10) > 33;
+      });
+      expect(hasConsolation).toBe(true);
+    });
+
+    test('non-consolation query uses density (returns densest chapters)', () => {
+      const rows = makeRows([
+        { chapter: 5, hit_count: 15 },  // dense judgment section
+        { chapter: 6, hit_count: 14 },
+        { chapter: 40, hit_count: 4 },  // sparse consolation
+      ]);
+      const judgment = clusterToPassageRanges(rows, 'Isaiah', 66, 'Prophecy', 'idolatry');
+      // Should use density, not consolation bias — picks chapters 5-6.
+      const hasJudgment = judgment.some((p) => {
+        const match = p.match(/Isaiah (\d+)/);
+        return match && parseInt(match[1], 10) <= 10;
+      });
+      expect(hasJudgment).toBe(true);
+    });
+
+    test('Prophecy consolation and non-consolation produce different results', () => {
+      const rows = makeRows([
+        { chapter: 1, hit_count: 10 },
+        { chapter: 40, hit_count: 8 },
+        { chapter: 53, hit_count: 9 },
+      ]);
+      const comfort = clusterToPassageRanges(rows, 'Isaiah', 66, 'Prophecy', "God's faithfulness");
+      const judgment = clusterToPassageRanges(rows, 'Isaiah', 66, 'Prophecy', 'idolatry');
+      // The two queries should produce different passage sets.
+      expect(comfort).not.toEqual(judgment);
+    });
+  });
+
+  describe('Epistle and default genre — density-based consecutive clustering', () => {
+    test('Epistle clusters consecutive chapters by density', () => {
+      const rows = makeRows([
+        { chapter: 3, hit_count: 8 },
+        { chapter: 4, hit_count: 10 },
+        { chapter: 5, hit_count: 7 },
+        { chapter: 15, hit_count: 2 },
+      ]);
+      const result = clusterToPassageRanges(rows, 'Romans', 16, 'Epistle');
+      // Chapters 3-5 should be merged into a single span.
+      expect(result.some((p) => /Romans 3-5/.test(p))).toBe(true);
+    });
+
+    test('Wisdom genre uses density-based clustering', () => {
+      const rows = makeRows([
+        { chapter: 3, hit_count: 6 },
+        { chapter: 28, hit_count: 10 },
+        { chapter: 29, hit_count: 8 },
+      ]);
+      const result = clusterToPassageRanges(rows, 'Proverbs', 31, 'Wisdom');
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.some((p) => p.includes('Proverbs'))).toBe(true);
+    });
+  });
+
+  describe('At least 3 distinct genre strategies', () => {
+    test('Poetry, History, and Prophecy produce distinct results for the same input', () => {
+      // Same chapter density data, but each genre should produce different output.
+      const rows = makeRows([
+        { chapter: 2, hit_count: 5 },
+        { chapter: 22, hit_count: 8 },
+        { chapter: 23, hit_count: 9 },
+        { chapter: 24, hit_count: 7 },
+        { chapter: 45, hit_count: 4 },
+      ]);
+
+      const poetryResult = clusterToPassageRanges(rows, 'TestBook', 50, 'Poetry');
+      const historyResult = clusterToPassageRanges(rows, 'TestBook', 50, 'History');
+      const prophecyResult = clusterToPassageRanges(rows, 'TestBook', 50, 'Prophecy', 'comfort');
+      const epistleResult = clusterToPassageRanges(rows, 'TestBook', 50, 'Epistle');
+
+      // All four strategies should be available and at least 3 of 4 should differ.
+      const uniqueResults = new Set([
+        JSON.stringify(poetryResult),
+        JSON.stringify(historyResult),
+        JSON.stringify(prophecyResult),
+        JSON.stringify(epistleResult),
+      ]);
+      expect(uniqueResults.size).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('Short book collapse behavior is preserved', () => {
+    test('short book with >=80% coverage returns just the book name', () => {
+      // 4-chapter book with all 4 chapters covered.
+      const rows = makeRows([
+        { chapter: 1, hit_count: 5 },
+        { chapter: 2, hit_count: 3 },
+        { chapter: 3, hit_count: 4 },
+        { chapter: 4, hit_count: 2 },
+      ]);
+      const result = clusterToPassageRanges(rows, 'Ruth', 4, 'History');
+      expect(result).toEqual(['Ruth']);
+    });
+  });
+});
+
+describe('isConsolationQuery', () => {
+  test('returns true for comfort-related queries', () => {
+    expect(isConsolationQuery('comfort in affliction')).toBe(true);
+    expect(isConsolationQuery("God's faithfulness")).toBe(true);
+    expect(isConsolationQuery('hope in darkness')).toBe(true);
+    expect(isConsolationQuery('salvation and redemption')).toBe(true);
+    expect(isConsolationQuery('mercy and grace')).toBe(true);
+  });
+
+  test('returns false for judgment/non-comfort queries', () => {
+    expect(isConsolationQuery('idolatry')).toBe(false);
+    expect(isConsolationQuery('sin and transgression')).toBe(false);
+    expect(isConsolationQuery('end times prophecy')).toBe(false);
+  });
+});
+
+// ─── Query-Alignment Scoring Unit Tests ───────────────────────────────────────
+//
+// These tests verify computeQueryAlignmentScore and buildQueryAlignmentNote
+// produce correct results for various input combinations. No Cloudflare API calls.
+
+describe('computeQueryAlignmentScore', () => {
+  test('returns 0 when there are no matched topics and no semantic hits', () => {
+    const score = computeQueryAlignmentScore(
+      1,
+      [],
+      new Map(),
+      new Map(),
+      0,
+    );
+    expect(score).toBe(0);
+  });
+
+  test('returns 0.5 when topic alignment is perfect but no semantic hits', () => {
+    // One matched topic with relevance weight 1.0, no semantic hits.
+    const relevance = new Map([[10, 1.0]]);
+    const score = computeQueryAlignmentScore(
+      1,
+      [10],
+      relevance,
+      new Map(), // no semantic hits
+      5,         // maxSemanticHits > 0 so normalization is valid
+    );
+    // A = 1.0 (avg weight), B = 0 (no hits). Final = 0.5*1.0 + 0.5*0 = 0.5
+    expect(score).toBeCloseTo(0.5);
+  });
+
+  test('returns 0.5 when semantic density is perfect but no matched topics', () => {
+    // No topic matches, but this book has the max semantic hits.
+    const hitsPerBook = new Map([[42, 10]]);
+    const score = computeQueryAlignmentScore(
+      42,
+      [],
+      new Map(),
+      hitsPerBook,
+      10, // maxSemanticHits = 10 (this book has all of them)
+    );
+    // A = 0 (no topics), B = 10/10 = 1.0. Final = 0.5*0 + 0.5*1.0 = 0.5
+    expect(score).toBeCloseTo(0.5);
+  });
+
+  test('returns 1.0 when both topic alignment and semantic density are perfect', () => {
+    const relevance = new Map([[10, 1.0], [11, 1.0]]);
+    const hitsPerBook = new Map([[5, 8]]);
+    const score = computeQueryAlignmentScore(
+      5,
+      [10, 11],
+      relevance,
+      hitsPerBook,
+      8, // maxSemanticHits = 8 (this book has all)
+    );
+    // A = (1.0 + 1.0) / 2 = 1.0, B = 8/8 = 1.0. Final = 0.5*1.0 + 0.5*1.0 = 1.0
+    expect(score).toBeCloseTo(1.0);
+  });
+
+  test('lower-relevance topic weights yield lower alignment score', () => {
+    // Topics matched by semantic only (low relevance weight ~0.4) vs by keyword (1.0).
+    const lowRelevance = new Map([[10, 0.4]]);
+    const highRelevance = new Map([[10, 1.0]]);
+    const hitsPerBook = new Map([[1, 0]]); // no semantic hits
+
+    const lowScore = computeQueryAlignmentScore(1, [10], lowRelevance, hitsPerBook, 0);
+    const highScore = computeQueryAlignmentScore(1, [10], highRelevance, hitsPerBook, 0);
+    expect(highScore).toBeGreaterThan(lowScore);
+  });
+
+  test('a book with more semantic hits scores higher than one with fewer (same topic alignment)', () => {
+    const relevance = new Map([[10, 1.0]]);
+    const hitsPerBook = new Map([[1, 2], [2, 8]]);
+    const maxHits = 8;
+
+    const scoreWithFewHits = computeQueryAlignmentScore(1, [10], relevance, hitsPerBook, maxHits);
+    const scoreWithManyHits = computeQueryAlignmentScore(2, [10], relevance, hitsPerBook, maxHits);
+    expect(scoreWithManyHits).toBeGreaterThan(scoreWithFewHits);
+  });
+
+  test('query-alignment score is in [0, 1] range for arbitrary inputs', () => {
+    const relevance = new Map([[1, 0.7], [2, 0.9], [3, 0.3]]);
+    const hitsPerBook = new Map([[100, 5], [101, 3], [102, 0]]);
+
+    for (const bookId of [100, 101, 102]) {
+      const score = computeQueryAlignmentScore(bookId, [1, 2, 3], relevance, hitsPerBook, 5);
+      expect(score).toBeGreaterThanOrEqual(0);
+      expect(score).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('buildQueryAlignmentNote', () => {
+  test('mentions the book name in the output', () => {
+    const note = buildQueryAlignmentNote('Job', 'suffering', ['suffering', 'endurance'], 5, 0.8);
+    expect(note).toContain('Job');
+  });
+
+  test('mentions the query topic in the output', () => {
+    const note = buildQueryAlignmentNote('Psalms', "God's faithfulness during suffering", ['faithfulness', 'lament'], 3, 0.7);
+    expect(note).toContain("God's faithfulness during suffering");
+  });
+
+  test('uses strong-signal phrasing when both signals are high', () => {
+    // semanticHits >= 2 AND queryAlignmentScore >= 0.6 → both signals fired
+    const note = buildQueryAlignmentNote('Romans', 'justification by faith', ['justification', 'faith'], 4, 0.75);
+    expect(note).toMatch(/aligns closely|both curated|semantic verse/i);
+  });
+
+  test('uses semantic-only phrasing when semantic hits are high but topic alignment is low', () => {
+    // semanticHits >= 2 but queryAlignmentScore < 0.6
+    const note = buildQueryAlignmentNote('Hebrews', 'faith and endurance', ['faith'], 3, 0.3);
+    expect(note).toMatch(/semantically close|thematic resonance/i);
+  });
+
+  test('uses topic-only phrasing when topic alignment is high but no semantic hits', () => {
+    // queryAlignmentScore >= 0.6 but semanticHits < 2
+    const note = buildQueryAlignmentNote('Isaiah', 'comfort in affliction', ['comfort', 'restoration'], 0, 0.8);
+    expect(note).toMatch(/curated topics|directly named|topically grounded/i);
+  });
+
+  test('uses indirect phrasing when both signals are weak', () => {
+    // semanticHits < 2 and queryAlignmentScore < 0.6 → weak signal
+    const note = buildQueryAlignmentNote('Numbers', 'redemption', ['law'], 0, 0.3);
+    expect(note).toMatch(/related to|indirect|broader topical/i);
+  });
+
+  test('output is a non-empty string for any valid input', () => {
+    const cases: Array<[string, string, string[], number, number]> = [
+      ['Genesis', 'covenant', ['covenant', 'creation'], 0, 0.5],
+      ['Matthew', 'the kingdom of God', ['kingdom', 'righteousness'], 6, 0.9],
+      ['Revelation', 'end times prophecy', ['judgment', 'prophecy'], 1, 0.4],
+    ];
+    for (const [book, query, themes, hits, score] of cases) {
+      const note = buildQueryAlignmentNote(book, query, themes, hits, score);
+      expect(typeof note).toBe('string');
+      expect(note.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('Query-alignment tiebreaker influences witness ordering', () => {
+  // This test verifies the sorting contract: when two candidates share the same
+  // witnessScore, the one with the higher query-alignment score comes first.
+  // We cannot call buildMajorWitnesses directly (it requires live D1/Vectorize),
+  // but we can verify computeQueryAlignmentScore produces different scores for
+  // candidates with different evidence profiles and that the sort logic is correct.
+  test('higher queryAlignmentScore sorts before lower when witnessScore is equal', () => {
+    const items = [
+      { book: 'B', witnessScore: 10, queryAlignmentScore: 0.3 },
+      { book: 'A', witnessScore: 10, queryAlignmentScore: 0.8 },
+      { book: 'C', witnessScore: 10, queryAlignmentScore: 0.5 },
+    ];
+
+    // Apply the same sort used in buildMajorWitnesses.
+    items.sort((a, b) => {
+      if (b.witnessScore !== a.witnessScore) return b.witnessScore - a.witnessScore;
+      return b.queryAlignmentScore - a.queryAlignmentScore;
+    });
+
+    expect(items[0].book).toBe('A'); // highest alignment
+    expect(items[1].book).toBe('C');
+    expect(items[2].book).toBe('B'); // lowest alignment
+  });
+
+  test('witnessScore takes precedence over queryAlignmentScore in primary sort', () => {
+    const items = [
+      { book: 'Low', witnessScore: 5, queryAlignmentScore: 1.0 },
+      { book: 'High', witnessScore: 20, queryAlignmentScore: 0.1 },
+    ];
+
+    items.sort((a, b) => {
+      if (b.witnessScore !== a.witnessScore) return b.witnessScore - a.witnessScore;
+      return b.queryAlignmentScore - a.queryAlignmentScore;
+    });
+
+    expect(items[0].book).toBe('High'); // higher witnessScore wins despite low alignment
+    expect(items[1].book).toBe('Low');
+  });
+});
+
+describe('Major witness query_alignment_note field', () => {
+  test('schema includes query_alignment_note on major witnesses when data is available', async () => {
+    // Non-API test: verifies the schema check for query_alignment_note.
+    // When D1/Vectorize are unavailable the tool returns isError, so we
+    // only assert the shape when a real result comes back.
+    const req = createRequest('tools/call', {
+      name: 'topical_search',
+      arguments: { topic: 'faith' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+
+    if (!data.result.isError) {
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(Array.isArray(parsed.major_witnesses)).toBe(true);
+
+      for (const witness of parsed.major_witnesses) {
+        // query_alignment_note must be a non-empty string when present.
+        if (witness.query_alignment_note !== undefined) {
+          expect(typeof witness.query_alignment_note).toBe('string');
+          expect(witness.query_alignment_note.length).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+});
 
 // ─── Resource Smoke Tests ─────────────────────────────────────────────────────
 

@@ -196,7 +196,7 @@ concordance.annotations = {
 
 concordance.description =
   'Count and locate every occurrence of a word or phrase across the entire Bible, grouped by book with per-book counts. Use when you need frequency data: "How many times does grace appear in Romans vs Ephesians?" ' +
-  'Useful for lexical tracing, but not a substitute for thematic or narrative retrieval. ' +
+  'For thematic or narrative-level retrieval, use topical_search. For original-language depth on a specific word, use word_study. ' +
   'Returns results in canonical order (Genesis to Revelation) with full verse text. Optionally filter by translation.';
 
 concordance.input = {

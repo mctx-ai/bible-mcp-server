@@ -488,8 +488,9 @@ searchBible.annotations = {
 searchBible.description =
   'Semantic similarity search — finds Bible verses whose meaning matches your query, even when the exact words differ. Best for exploratory discovery of related verses when the user does not know exact wording or references. ' +
   'Good for metaphor, imagery, or concept matching such as "living water", "God as shepherd", or "light as holiness". ' +
+  'When no translation filter is set, results are grouped by verse location with a translations[] array containing all available translations for each location. ' +
   'Do not use as the primary tool for broad theological questions like "What does the Bible say about X?" or for themes whose main witnesses may be books, narratives, or large passages rather than isolated verses. ' +
-  'For those, prefer topical_search instead. (Soft boundary: semantic_search can serve as a secondary tool after topical_search in layered workflows.) Filters: translation, book, testament (OT/NT).';
+  'For broad thematic or narrative-level retrieval, use topical_search instead. (Soft boundary: semantic_search can serve as a secondary tool after topical_search in layered workflows.) Filters: translation, book, testament (OT/NT).';
 
 searchBible.input = {
   query: T.string({

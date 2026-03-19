@@ -160,6 +160,7 @@ crossReferences.annotations = {
 
 crossReferences.description =
   'Trace related passages from a specific Bible verse using 606,140 curated cross-references (results in KJV). Best when you already have a strong anchor verse and want to expand into a broader canonical network of related texts. ' +
+  'Anchor verses are typically identified first via topical_search, find_text, semantic_search, concordance, or word_study. ' +
   'Returns the source verse and each referenced passage with text, citation, and confidence score. ' +
   'Use after identifying an anchor verse, not as the primary tool for first-pass discovery of a broad topic.';
 

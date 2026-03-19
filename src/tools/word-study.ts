@@ -619,6 +619,7 @@ wordStudy.annotations = {
 
 wordStudy.description =
   'Look up the original Hebrew or Greek word behind an English word in a specific Bible verse. Returns original-language lexicon definition, morphological analysis, and other verses using the same word. ' +
+  'Verses of interest are typically found first via topical_search, find_text, or semantic_search. ' +
   'Use only when the verse is already known and the user wants original-language analysis of a specific word. Not for broad topical questions. ' +
   'Accepts either a word position number or an English word to match.';
 

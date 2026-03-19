@@ -29,11 +29,13 @@ interface TopicalResult {
 interface MajorWitness {
   book: string;
   testament: string;
+  genre: string;
   verse_count: number;
   chapter_count: number;
   matched_topics: string[];
   narrative?: string;
   match_reason: string;
+  witness_strength: 'central' | 'strong' | 'supporting';
   representative_verse: {
     text: string;
     citation: Citation;
@@ -42,6 +44,7 @@ interface MajorWitness {
   themes_matched?: string[];
   suggested_anchor_passages?: string[];
   narrative_reason?: string;
+  query_alignment_note?: string;
 }
 
 interface TopicalSearchResponse {
@@ -166,6 +169,91 @@ const BOOK_TOTAL_CHAPTERS: Record<string, number> = {
   '3 John': 1,
   Jude: 1,
   Revelation: 22,
+};
+
+// ─── Literary genre lookup for all 66 canonical books ────────────────────────
+
+// Maps each canonical Bible book name to its literary genre category.
+// Categories: Law, History, Wisdom, Poetry, Prophecy, Gospel, Acts, Epistle, Apocalyptic
+const BOOK_GENRE: Record<string, string> = {
+  // Old Testament — Law (Pentateuch)
+  Genesis: 'Law',
+  Exodus: 'Law',
+  // Leviticus and Numbers are Law books but contain mostly ritual/legal content
+  // with little narrative arc; density clustering (default) is more appropriate
+  // than arc clustering, so they are classified as 'Wisdom' to route them there.
+  Leviticus: 'Wisdom',
+  Numbers: 'Wisdom',
+  Deuteronomy: 'Law',
+  // Old Testament — History
+  Joshua: 'History',
+  Judges: 'History',
+  Ruth: 'History',
+  '1 Samuel': 'History',
+  '2 Samuel': 'History',
+  '1 Kings': 'History',
+  '2 Kings': 'History',
+  '1 Chronicles': 'History',
+  '2 Chronicles': 'History',
+  Ezra: 'History',
+  Nehemiah: 'History',
+  Esther: 'History',
+  // Old Testament — Wisdom
+  Job: 'Wisdom',
+  Proverbs: 'Wisdom',
+  Ecclesiastes: 'Wisdom',
+  // Old Testament — Poetry
+  Psalms: 'Poetry',
+  Lamentations: 'Poetry',
+  'Song of Solomon': 'Poetry',
+  // Old Testament — Prophecy
+  Isaiah: 'Prophecy',
+  Jeremiah: 'Prophecy',
+  Ezekiel: 'Prophecy',
+  Daniel: 'Apocalyptic',
+  Hosea: 'Prophecy',
+  Joel: 'Prophecy',
+  Amos: 'Prophecy',
+  Obadiah: 'Prophecy',
+  Jonah: 'Prophecy',
+  Micah: 'Prophecy',
+  Nahum: 'Prophecy',
+  Habakkuk: 'Prophecy',
+  Zephaniah: 'Prophecy',
+  Haggai: 'Prophecy',
+  Zechariah: 'Prophecy',
+  Malachi: 'Prophecy',
+  // New Testament — Gospel
+  Matthew: 'Gospel',
+  Mark: 'Gospel',
+  Luke: 'Gospel',
+  John: 'Gospel',
+  // New Testament — Acts
+  Acts: 'Acts',
+  // New Testament — Epistle
+  Romans: 'Epistle',
+  '1 Corinthians': 'Epistle',
+  '2 Corinthians': 'Epistle',
+  Galatians: 'Epistle',
+  Ephesians: 'Epistle',
+  Philippians: 'Epistle',
+  Colossians: 'Epistle',
+  '1 Thessalonians': 'Epistle',
+  '2 Thessalonians': 'Epistle',
+  '1 Timothy': 'Epistle',
+  '2 Timothy': 'Epistle',
+  Titus: 'Epistle',
+  Philemon: 'Epistle',
+  Hebrews: 'Epistle',
+  James: 'Epistle',
+  '1 Peter': 'Epistle',
+  '2 Peter': 'Epistle',
+  '1 John': 'Epistle',
+  '2 John': 'Epistle',
+  '3 John': 'Epistle',
+  Jude: 'Epistle',
+  // New Testament — Apocalyptic
+  Revelation: 'Apocalyptic',
 };
 
 // ─── Nave's topic relevance scoring ───────────────────────────────────────────
@@ -526,25 +614,66 @@ function detectNarrative(
 
 // ─── Match reason generation ──────────────────────────────────────────────────
 
+// Returns a genre-appropriate, natural-language match reason for a major witness.
+// Focuses on what this book contributes to the query rather than raw counts.
 function buildWitnessMatchReason(
   candidate: WitnessCandidate,
   narrative?: string,
+  themesMatched?: string[],
 ): string {
-  const topicList = candidate.topic_names
-    .split(',')
-    .slice(0, 3)
-    .join(', ');
+  const genre = BOOK_GENRE[candidate.book_name] ?? 'Unknown';
+  const topThemes = themesMatched && themesMatched.length > 0
+    ? themesMatched.slice(0, 3)
+    : candidate.topic_names.split(',').map((n) => n.trim()).filter(Boolean).slice(0, 3);
+
+  const themePhrase = topThemes.length > 1
+    ? topThemes.slice(0, -1).join(', ') + ' and ' + topThemes[topThemes.length - 1]
+    : topThemes[0] ?? 'this theme';
 
   if (narrative) {
-    return `${narrative} narrative: ${candidate.verse_count} topical references across ${candidate.book_name} ${candidate.min_chapter}-${candidate.max_chapter} (${topicList})`;
+    // Narrative arc within a book — focus on the story rather than counts.
+    const chapterRange = `${candidate.book_name} ${candidate.min_chapter}–${candidate.max_chapter}`;
+    switch (genre) {
+      case 'Law':
+        return `The ${narrative} account (${chapterRange}) grounds ${themePhrase} in covenant law and divine instruction.`;
+      case 'History':
+        return `The ${narrative} narrative (${chapterRange}) shows ${themePhrase} through a sustained historical story arc.`;
+      case 'Gospel':
+        return `The ${narrative} account (${chapterRange}) presents ${themePhrase} through the life and ministry of Jesus.`;
+      default:
+        return `The ${narrative} narrative (${chapterRange}) addresses ${themePhrase} through its story arc.`;
+    }
   }
-  return `${candidate.verse_count} topical references across ${candidate.chapter_count} chapters (${topicList})`;
+
+  switch (genre) {
+    case 'Law':
+      return `${candidate.book_name} establishes ${themePhrase} through foundational covenant law and divine ordinance.`;
+    case 'History':
+      return `${candidate.book_name} demonstrates ${themePhrase} through a sustained historical narrative.`;
+    case 'Wisdom':
+      return `${candidate.book_name} explores ${themePhrase} through wisdom reflection, dialogue, and instruction.`;
+    case 'Poetry':
+      return `${candidate.book_name} voices ${themePhrase} in prayer, lament, praise, and trust.`;
+    case 'Prophecy':
+      return `${candidate.book_name} develops ${themePhrase} through prophetic proclamation, judgment, and promise.`;
+    case 'Gospel':
+      return `${candidate.book_name} presents ${themePhrase} through the life, teaching, and ministry of Jesus.`;
+    case 'Acts':
+      return `${candidate.book_name} demonstrates ${themePhrase} through the early church's witness and mission.`;
+    case 'Epistle':
+      return `${candidate.book_name} teaches ${themePhrase} in doctrinal and pastoral terms.`;
+    case 'Apocalyptic':
+      return `${candidate.book_name} envisions ${themePhrase} in the context of ultimate divine victory and restoration.`;
+    default:
+      return `${candidate.book_name} addresses ${themePhrase} across ${candidate.chapter_count} chapters.`;
+  }
 }
 
 // ─── Representative verse selection ──────────────────────────────────────────
 
 async function fetchRepresentativeVerse(
   candidate: WitnessCandidate,
+  matchedTopicIds: number[],
   semanticCoords: Map<
     string,
     {
@@ -557,38 +686,86 @@ async function fetchRepresentativeVerse(
   >,
   semanticVerseMap: Map<string, VerseRow>,
 ): Promise<{ text: string; citation: Citation }> {
-  // Try to find the highest-scoring Vectorize hit for this book.
-  let bestScore = -Infinity;
-  let bestVerseRow: VerseRow | undefined;
+  // Prefer verses that appear in nave_topic_verses for the matched topics AND
+  // have a high Vectorize semantic score. This ensures the representative verse
+  // is both topically grounded AND semantically close to the query.
+  //
+  // Build a set of topic-matched verse keys for this book so we can check
+  // membership in O(1) during the Vectorize score scan.
+  let topicMatchedKeys: Set<string> | null = null;
+
+  if (matchedTopicIds.length > 0) {
+    const placeholders = matchedTopicIds.map(() => '?').join(', ');
+    const topicVerseResult = await d1.query(
+      `SELECT DISTINCT chapter, verse
+       FROM nave_topic_verses
+       WHERE book_id = ?
+         AND topic_id IN (${placeholders})`,
+      [candidate.book_id, ...matchedTopicIds],
+    );
+
+    if (topicVerseResult.results.length > 0) {
+      topicMatchedKeys = new Set<string>();
+      for (const row of topicVerseResult.results) {
+        topicMatchedKeys.add(`${candidate.book_id}:${row['chapter']}:${row['verse']}`);
+      }
+    }
+  }
+
+  // First pass: find the highest-scoring Vectorize hit that is also topic-matched.
+  let bestTopicScore = -Infinity;
+  let bestTopicVerseRow: VerseRow | undefined;
+
+  // Second pass fallback: any Vectorize hit in the book (if no topic-matched hits).
+  let bestAnyScore = -Infinity;
+  let bestAnyVerseRow: VerseRow | undefined;
 
   for (const [coordKey, coord] of semanticCoords) {
     if (coord.book_id !== candidate.book_id) continue;
     const verseRow = semanticVerseMap.get(coordKey);
     if (!verseRow) continue;
-    if (coord.score > bestScore) {
-      bestScore = coord.score;
-      bestVerseRow = verseRow;
+
+    if (coord.score > bestAnyScore) {
+      bestAnyScore = coord.score;
+      bestAnyVerseRow = verseRow;
+    }
+
+    if (topicMatchedKeys && topicMatchedKeys.has(coordKey)) {
+      if (coord.score > bestTopicScore) {
+        bestTopicScore = coord.score;
+        bestTopicVerseRow = verseRow;
+      }
     }
   }
 
-  if (bestVerseRow) {
+  // Prefer topic-matched + semantic verse, fall back to any semantic verse.
+  const chosen = bestTopicVerseRow ?? bestAnyVerseRow;
+  if (chosen) {
     return {
-      text: bestVerseRow.text,
+      text: chosen.text,
       citation: {
-        book: bestVerseRow.book_name,
-        chapter: bestVerseRow.chapter,
-        verse: bestVerseRow.verse,
-        translation: bestVerseRow.translation_abbrev,
+        book: chosen.book_name,
+        chapter: chosen.chapter,
+        verse: chosen.verse,
+        translation: chosen.translation_abbrev,
       },
     };
   }
 
-  // Fallback: fetch verse 1 of the most topic-dense chapter in this book.
+  // Fallback: fetch verse 1 of the densest topic-matched chapter in this book.
+  // When no Vectorize hits exist for this book, use topic density as a proxy.
   const kjvTranslation = getTranslation('KJV');
   const translationFilter = kjvTranslation
     ? `AND v.translation_id = ?`
     : `AND t.abbreviation = 'KJV'`;
   const translationParams: unknown[] = kjvTranslation ? [kjvTranslation.id] : [];
+
+  // Query dense chapter from the matched topics only (if available), else all topics.
+  const topicFilter =
+    matchedTopicIds.length > 0
+      ? `AND ntv.topic_id IN (${matchedTopicIds.map(() => '?').join(', ')})`
+      : '';
+  const topicParams = matchedTopicIds.length > 0 ? matchedTopicIds : [];
 
   const fallbackResult = await d1.query(
     `SELECT
@@ -596,10 +773,11 @@ async function fetchRepresentativeVerse(
        COUNT(*) AS topic_hits
      FROM nave_topic_verses ntv
      WHERE ntv.book_id = ?
+       ${topicFilter}
      GROUP BY ntv.chapter
      ORDER BY topic_hits DESC
      LIMIT 1`,
-    [candidate.book_id],
+    [candidate.book_id, ...topicParams],
   );
 
   const denseChapter =
@@ -653,54 +831,173 @@ async function fetchRepresentativeVerse(
 
 // ─── Enrichment helpers ───────────────────────────────────────────────────────
 
-// Builds a human-readable sentence explaining why a book is a principal witness.
-// Uses pre-computed salience data to find the 2-3 most central topics for this
-// book, then synthesizes a sentence. Falls back to topic_names when salience
-// data is unavailable.
+// Builds a genre-aware, natural-language explanation of why this book is a
+// principal witness for the query. Answers: "Why does this book matter for
+// THIS query?" rather than reporting analytics.
+//
+// The explanation selects a genre-appropriate template and weaves in the
+// top matched themes. Verse count and coverage are available as supporting
+// context but are not the lead.
 function buildWhyThisBookMatters(
   candidate: WitnessCandidate,
   salienceMap: Map<string, number>,
   salienceTopicIds: number[],
   expandedTopics: Array<{ id: number; name: string }>,
+  precomputedThemes?: string[],
 ): string {
-  // Collect per-topic salience scores for this book.
-  const topicById = new Map(expandedTopics.map((t) => [t.id, t.name]));
-  const scored: Array<{ name: string; salience: number }> = [];
+  const genre = BOOK_GENRE[candidate.book_name] ?? 'Unknown';
 
-  for (const topicId of salienceTopicIds) {
-    const salience = salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
-    const name = topicById.get(topicId);
-    if (name && salience > 0) {
-      scored.push({ name, salience });
+  // Resolve the top themes: prefer pre-computed themes (already salience-sorted),
+  // otherwise derive from salience data, otherwise fall back to candidate topics.
+  let topThemes: string[];
+
+  if (precomputedThemes && precomputedThemes.length > 0) {
+    topThemes = precomputedThemes.slice(0, 3);
+  } else {
+    const topicById = new Map(expandedTopics.map((t) => [t.id, t.name]));
+    const scored: Array<{ name: string; salience: number }> = [];
+
+    for (const topicId of salienceTopicIds) {
+      const salience = salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
+      const name = topicById.get(topicId);
+      if (name && salience > 0) {
+        scored.push({ name, salience });
+      }
     }
+
+    scored.sort((a, b) => b.salience - a.salience);
+    topThemes = scored.slice(0, 3).map((t) => t.name);
   }
 
-  scored.sort((a, b) => b.salience - a.salience);
-  const top = scored.slice(0, 3);
-
-  if (top.length > 0) {
-    const topicList = top.map((t) => t.name).join(', ');
-    const totalChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? candidate.chapter_count;
-    const coveragePct = Math.round((candidate.chapter_count / totalChapters) * 100);
-    return `${candidate.book_name} concentrates on ${topicList}, with ${candidate.verse_count} topical references spanning ${coveragePct}% of the book.`;
+  // If still empty, fall back to the candidate's own topic list.
+  if (topThemes.length === 0) {
+    topThemes = candidate.topic_names
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean)
+      .slice(0, 3);
   }
 
-  // Fallback: use first 2-3 topic names from the candidate directly.
-  const fallbackTopics = candidate.topic_names
-    .split(',')
-    .map((n) => n.trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(', ');
+  // Format theme list naturally: "A, B and C" or "A and B" or just "A".
+  const themePhrase =
+    topThemes.length > 1
+      ? topThemes.slice(0, -1).join(', ') + ' and ' + topThemes[topThemes.length - 1]
+      : topThemes[0] ?? 'this theme';
 
-  return fallbackTopics
-    ? `${candidate.book_name} addresses ${fallbackTopics} with ${candidate.verse_count} topical references across ${candidate.chapter_count} chapters.`
-    : `${candidate.book_name} is a principal witness with ${candidate.verse_count} topical references.`;
+  // Select a genre-appropriate explanation template.
+  switch (genre) {
+    case 'Law':
+      return `${candidate.book_name} is one of the Bible's foundational treatments of ${themePhrase}, grounding it in covenant law, divine instruction, and Israel's formative story.`;
+    case 'History':
+      return `${candidate.book_name} is one of the Bible's central sustained treatments of ${themePhrase}, showing its significance through a sustained historical narrative.`;
+    case 'Wisdom':
+      return `${candidate.book_name} is one of the Bible's central sustained treatments of ${themePhrase}, exploring it through wisdom reflection, dialogue, and instruction.`;
+    case 'Poetry':
+      return `${candidate.book_name} repeatedly voices ${themePhrase} in prayer, lament, praise, and trust, making it a primary devotional witness to this theme.`;
+    case 'Prophecy':
+      return `${candidate.book_name} develops ${themePhrase} through prophetic proclamation, judgment, comfort, and restoration, offering one of Scripture's richest prophetic treatments.`;
+    case 'Gospel':
+      return `${candidate.book_name} presents ${themePhrase} through the life, teaching, and ministry of Jesus, grounding the theme in the person and work of Christ.`;
+    case 'Acts':
+      return `${candidate.book_name} demonstrates ${themePhrase} in the life of the early church, showing how the apostolic community embodied and proclaimed this theme.`;
+    case 'Epistle':
+      return `${candidate.book_name} explicitly teaches ${themePhrase} in doctrinal and pastoral terms, offering some of the New Testament's clearest theological exposition of this theme.`;
+    case 'Apocalyptic':
+      return `${candidate.book_name} envisions ${themePhrase} in the context of ultimate divine victory and cosmic restoration, providing the Bible's most sustained apocalyptic treatment.`;
+    default:
+      return `${candidate.book_name} is a principal biblical witness to ${themePhrase} across ${candidate.chapter_count} chapters.`;
+  }
+}
+
+// Maps raw Nave's taxonomy topic names to user-facing thematic labels.
+// Keys are the exact uppercase names used in the database.
+// Values are clean, human-readable labels shown in the output.
+const TOPIC_LABEL_MAP: Record<string, string> = {
+  'AFFLICTIONS AND ADVERSITIES': 'affliction',
+  'AFFLICTIONS': 'affliction',
+  'ADVERSITY': 'adversity',
+  'ANXIETY': 'anxiety',
+  'ATONEMENT': 'atonement',
+  'BAPTISM': 'baptism',
+  'BLESSINGS': 'blessing',
+  'CALLING': 'calling',
+  'CHARITY': 'generosity',
+  'CHRIST': 'Christ',
+  'CHURCH': 'the church',
+  'COMFORT': 'comfort',
+  'COMPASSION': 'compassion',
+  'COVENANT': 'covenant',
+  'CREATION': 'creation',
+  'DEATH': 'death',
+  'DELIVERANCE': 'deliverance',
+  'DISCIPLESHIP': 'discipleship',
+  'ELECTION': 'election',
+  'ENDURANCE': 'endurance',
+  'ETERNAL LIFE': 'eternal life',
+  'FAITH': 'faith',
+  'FAITHFULNESS': 'faithfulness',
+  'FEAR': 'fear',
+  'FORGIVENESS': 'forgiveness',
+  'GLORIFICATION': 'glorification',
+  'GLORY': 'glory',
+  'GOD': 'God',
+  'GRACE': 'grace',
+  'GRATITUDE': 'gratitude',
+  'GRIEF': 'grief',
+  'HEALING': 'healing',
+  'HOLINESS': 'holiness',
+  'HOLY SPIRIT': 'the Holy Spirit',
+  'HOPE': 'hope',
+  'HUMILITY': 'humility',
+  'IDOLATRY': 'idolatry',
+  'ISRAEL': 'Israel',
+  'JESUS CHRIST': 'Jesus Christ',
+  'JOY': 'joy',
+  'JUDGMENT': 'judgment',
+  'JUSTICE': 'justice',
+  'KINGDOM OF GOD': 'the kingdom of God',
+  'LAW': 'the law',
+  'LAMENT': 'lament',
+  'LOVE': 'love',
+  'MERCY': 'mercy',
+  'OBEDIENCE': 'obedience',
+  'PATIENCE': 'patience',
+  'PEACE': 'peace',
+  'PRAYER': 'prayer',
+  'PROPHECY': 'prophecy',
+  'REDEMPTION': 'redemption',
+  'REPENTANCE': 'repentance',
+  'RESURRECTION': 'resurrection',
+  'REVELATION': 'revelation',
+  'RIGHTEOUSNESS': 'righteousness',
+  'SACRIFICE': 'sacrifice',
+  'SALVATION': 'salvation',
+  'SANCTIFICATION': 'sanctification',
+  'SIN': 'sin',
+  'SUFFERING': 'suffering',
+  'TEMPTATION': 'temptation',
+  'THANKSGIVING': 'thanksgiving',
+  'TRUST': 'trust',
+  'TRUTH': 'truth',
+  'UNFAITHFULNESS': 'unfaithfulness',
+  'WISDOM': 'wisdom',
+  'WORKS': 'works',
+  'WORSHIP': 'worship',
+};
+
+// Transforms a raw Nave's topic name into a user-facing thematic label.
+// Checks the explicit map first; falls back to a lowercase-and-clean transform.
+function toThemeLabel(topicName: string): string {
+  const mapped = TOPIC_LABEL_MAP[topicName];
+  if (mapped !== undefined) return mapped;
+  // Fallback: lowercase and replace ' AND ' with ' and '.
+  return topicName.toLowerCase().replace(/ and /gi, ' and ');
 }
 
 // Builds the list of query-relevant themes for a witness book.
 // Filters topic_names to only those topics that appear in expandedTopics
 // (the query-matched topic set), then sorts by salience descending.
+// Internal scoring uses original topic names; output labels are user-facing.
 function buildThemesMatched(
   candidate: WitnessCandidate,
   expandedTopics: Array<{ id: number; name: string }>,
@@ -718,11 +1015,12 @@ function buildThemesMatched(
   const matched = candidateTopics.filter((name) => expandedNameSet.has(name));
 
   if (matched.length === 0) {
-    // Fallback: return first 5 topics from candidate.
-    return candidateTopics.slice(0, 5);
+    // Fallback: return first 5 topics from candidate as user-facing labels.
+    return candidateTopics.slice(0, 5).map(toThemeLabel);
   }
 
   // Build a salience score lookup by topic name for this book.
+  // Scoring uses original topic names (not labels) to preserve correctness.
   const topicIdByName = new Map(expandedTopics.map((t) => [t.name, t.id]));
   const getSalience = (name: string): number => {
     const topicId = topicIdByName.get(name);
@@ -731,7 +1029,8 @@ function buildThemesMatched(
   };
 
   matched.sort((a, b) => getSalience(b) - getSalience(a));
-  return matched;
+  // Transform to user-facing labels only after sorting by internal names.
+  return matched.map(toThemeLabel);
 }
 
 // Row shape returned by the anchor passage batch query.
@@ -783,14 +1082,191 @@ async function fetchAnchorPassageData(
   return byBook;
 }
 
-// Clusters chapter rows for a single book into passage range strings.
-// Consecutive chapters (gap <= 2) are merged into spans. Short books whose
-// coverage >= 80% of total chapters collapse to just the book name.
-// Returns at most 3 passage ranges.
+// Keywords that indicate a comfort/hope/faithfulness theme in the query.
+// Used by Prophecy clustering to bias toward consolation sections.
+const CONSOLATION_KEYWORDS = [
+  'comfort', 'hope', 'faithful', 'faithfulness', 'promise', 'restore',
+  'restoration', 'consolation', 'peace', 'salvation', 'redemption',
+  'deliverance', 'mercy', 'grace', 'blessing', 'renewal', 'trust',
+];
+
+// Returns true when the query topic semantically relates to comfort or hope.
+function isConsolationQuery(queryTopic: string): boolean {
+  const lower = queryTopic.toLowerCase();
+  return CONSOLATION_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+// Formats a single AnchorChapterRow into a passage range string.
+function formatPassageRange(
+  bookName: string,
+  start: number,
+  end: number,
+  minVerse: number,
+  maxVerse: number,
+): string {
+  if (start === end) {
+    const verseRange = maxVerse - minVerse;
+    if (verseRange < 10 && minVerse !== maxVerse) {
+      return `${bookName} ${start}:${minVerse}-${maxVerse}`;
+    }
+    return `${bookName} ${start}`;
+  }
+  return `${bookName} ${start}-${end}`;
+}
+
+// Clusters chapter rows into consecutive spans (gap <= maxGap).
+function buildSpans(
+  chapters: AnchorChapterRow[],
+  maxGap: number,
+): Array<{ start: number; end: number; totalHits: number; minVerse: number; maxVerse: number }> {
+  const spans: Array<{ start: number; end: number; totalHits: number; minVerse: number; maxVerse: number }> = [];
+  let currentSpan: typeof spans[0] | null = null;
+
+  for (const row of chapters) {
+    if (!currentSpan) {
+      currentSpan = { start: row.chapter, end: row.chapter, totalHits: row.hit_count, minVerse: row.min_verse, maxVerse: row.max_verse };
+    } else if (row.chapter - currentSpan.end <= maxGap) {
+      currentSpan.end = row.chapter;
+      currentSpan.totalHits += row.hit_count;
+      currentSpan.minVerse = Math.min(currentSpan.minVerse, row.min_verse);
+      currentSpan.maxVerse = Math.max(currentSpan.maxVerse, row.max_verse);
+    } else {
+      spans.push(currentSpan);
+      currentSpan = { start: row.chapter, end: row.chapter, totalHits: row.hit_count, minVerse: row.min_verse, maxVerse: row.max_verse };
+    }
+  }
+  if (currentSpan) spans.push(currentSpan);
+
+  return spans;
+}
+
+// ─── Genre-aware passage clustering strategies ────────────────────────────────
+//
+// Poetry (Psalms, Lamentations): Prefer individual thematically dense chapters
+// rather than consecutive ranges. Psalms are independent poems — consecutive
+// clustering artificially groups unrelated psalms. Return top 3 chapters by
+// hit count as individual references.
+//
+// Narrative (Law, History, Gospel, Acts): Bias toward the arc structure of the
+// book — beginning, middle, and end — to reflect entry, crisis, and resolution
+// rather than just the single densest cluster.
+//
+// Prophecy: When the query relates to comfort/hope/faithfulness, bias toward
+// consolation sections in the latter half of the book. Otherwise use density.
+//
+// Epistle and default: Density-based consecutive clustering (unchanged).
+
+function clusterPoetry(
+  rows: AnchorChapterRow[],
+  bookName: string,
+): string[] {
+  if (rows.length === 0) return [];
+  // Return up to 3 individual dense chapters — no consecutive merging.
+  const sorted = [...rows].sort((a, b) => b.hit_count - a.hit_count);
+  const top = sorted.slice(0, 3);
+  // Sort by chapter number for canonical order in output.
+  top.sort((a, b) => a.chapter - b.chapter);
+  return top.map((r) => {
+    const verseRange = r.max_verse - r.min_verse;
+    if (verseRange < 10 && r.min_verse !== r.max_verse) {
+      return `${bookName} ${r.chapter}:${r.min_verse}-${r.max_verse}`;
+    }
+    return `${bookName} ${r.chapter}`;
+  });
+}
+
+function clusterNarrative(
+  rows: AnchorChapterRow[],
+  bookName: string,
+  totalBookChapters: number,
+): string[] {
+  if (rows.length === 0) return [];
+
+  // Divide the book into thirds: entry arc, crisis arc, resolution arc.
+  const arcSize = Math.ceil(totalBookChapters / 3);
+  const entryEnd = arcSize;
+  const crisisEnd = arcSize * 2;
+
+  const entryRows = rows.filter((r) => r.chapter <= entryEnd);
+  const crisisRows = rows.filter((r) => r.chapter > entryEnd && r.chapter <= crisisEnd);
+  const resolutionRows = rows.filter((r) => r.chapter > crisisEnd);
+
+  // For each arc, find the single densest chapter.
+  const arcRepresentatives: AnchorChapterRow[] = [];
+  for (const arcRows of [entryRows, crisisRows, resolutionRows]) {
+    if (arcRows.length === 0) continue;
+    const densest = arcRows.reduce((best, r) => r.hit_count > best.hit_count ? r : best);
+    arcRepresentatives.push(densest);
+  }
+
+  if (arcRepresentatives.length === 0) return [];
+
+  // Sort by chapter for canonical order, then build spans (gap <= 3 to preserve arc grouping).
+  arcRepresentatives.sort((a, b) => a.chapter - b.chapter);
+  const spans = buildSpans(arcRepresentatives, 3);
+  spans.sort((a, b) => b.totalHits - a.totalHits);
+
+  return spans.slice(0, 3).map((span) =>
+    formatPassageRange(bookName, span.start, span.end, span.minVerse, span.maxVerse)
+  );
+}
+
+function clusterProphecy(
+  rows: AnchorChapterRow[],
+  bookName: string,
+  totalBookChapters: number,
+  queryTopic: string,
+): string[] {
+  if (rows.length === 0) return [];
+
+  // For comfort/hope/faithfulness queries, prefer the latter half of prophetic
+  // books where consolation oracles typically appear (e.g. Isaiah 40-66).
+  const consolation = isConsolationQuery(queryTopic);
+  let candidates = rows;
+
+  if (consolation && totalBookChapters >= 10) {
+    const midpoint = Math.ceil(totalBookChapters / 2);
+    const consolationRows = rows.filter((r) => r.chapter > midpoint);
+    // Only use consolation filter if it yields any results.
+    if (consolationRows.length > 0) {
+      candidates = consolationRows;
+    }
+  }
+
+  // Within selected candidates, use density-based consecutive clustering.
+  const MIN_HIT_THRESHOLD = 2;
+  let qualifying = candidates.filter((r) => r.hit_count >= MIN_HIT_THRESHOLD);
+  if (qualifying.length === 0) {
+    qualifying = [...candidates].sort((a, b) => b.hit_count - a.hit_count).slice(0, 3);
+  }
+
+  qualifying.sort((a, b) => b.hit_count - a.hit_count);
+  const topChapters = qualifying.slice(0, 12);
+  topChapters.sort((a, b) => a.chapter - b.chapter);
+
+  const spans = buildSpans(topChapters, 2);
+  spans.sort((a, b) => b.totalHits - a.totalHits);
+
+  return spans.slice(0, 3).map((span) =>
+    formatPassageRange(bookName, span.start, span.end, span.minVerse, span.maxVerse)
+  );
+}
+
+// Clusters chapter rows for a single book into passage range strings using a
+// genre-aware strategy. Returns at most 3 passage ranges.
+//
+// Genre strategies:
+//   Poetry     — Individual dense chapters (no consecutive merging)
+//   Narrative  — Arc-based (entry / crisis / resolution thirds of the book)
+//   Prophecy   — Consolation-biased for comfort/hope queries; density otherwise
+//   Epistle    — Density-based consecutive clustering (unchanged)
+//   Default    — Density-based consecutive clustering
 function clusterToPassageRanges(
   rows: AnchorChapterRow[],
   bookName: string,
   totalBookChapters: number,
+  genre?: string,
+  queryTopic?: string,
 ): string[] {
   if (rows.length === 0) return [];
 
@@ -802,8 +1278,27 @@ function clusterToPassageRanges(
     return [bookName];
   }
 
-  // Filter chapters with at least 2 hits to avoid sparse anchors (unless the
-  // entire book is sparse, in which case keep the 3 highest-hit chapters).
+  // Poetry: individual dense chapters (Psalms, Lamentations).
+  if (genre === 'Poetry') {
+    return clusterPoetry(rows, bookName);
+  }
+
+  // Narrative: arc-based clustering (Law, History, Gospel, Acts).
+  if (
+    genre === 'Law' ||
+    genre === 'History' ||
+    genre === 'Gospel' ||
+    genre === 'Acts'
+  ) {
+    return clusterNarrative(rows, bookName, totalBookChapters);
+  }
+
+  // Prophecy: consolation-biased for comfort/hope queries.
+  if (genre === 'Prophecy') {
+    return clusterProphecy(rows, bookName, totalBookChapters, queryTopic ?? '');
+  }
+
+  // Epistle, Wisdom, Apocalyptic, and default: density-based consecutive clustering.
   const MIN_HIT_THRESHOLD = 2;
   let qualifying = rows.filter((r) => r.hit_count >= MIN_HIT_THRESHOLD);
   if (qualifying.length === 0) {
@@ -818,50 +1313,150 @@ function clusterToPassageRanges(
   const topChapters = qualifying.slice(0, 12);
   topChapters.sort((a, b) => a.chapter - b.chapter);
 
-  // Cluster consecutive chapters (gap <= 2) into spans.
-  const spans: Array<{ start: number; end: number; totalHits: number; minVerse: number; maxVerse: number }> = [];
-  let currentSpan: typeof spans[0] | null = null;
-
-  for (const row of topChapters) {
-    if (!currentSpan) {
-      currentSpan = { start: row.chapter, end: row.chapter, totalHits: row.hit_count, minVerse: row.min_verse, maxVerse: row.max_verse };
-    } else if (row.chapter - currentSpan.end <= 2) {
-      currentSpan.end = row.chapter;
-      currentSpan.totalHits += row.hit_count;
-      currentSpan.minVerse = Math.min(currentSpan.minVerse, row.min_verse);
-      currentSpan.maxVerse = Math.max(currentSpan.maxVerse, row.max_verse);
-    } else {
-      spans.push(currentSpan);
-      currentSpan = { start: row.chapter, end: row.chapter, totalHits: row.hit_count, minVerse: row.min_verse, maxVerse: row.max_verse };
-    }
-  }
-  if (currentSpan) spans.push(currentSpan);
+  const spans = buildSpans(topChapters, 2);
 
   // Sort spans by aggregate hit count descending.
   spans.sort((a, b) => b.totalHits - a.totalHits);
 
   // Emit up to 3 passage range strings.
-  return spans.slice(0, 3).map((span) => {
-    if (span.start === span.end) {
-      // Single chapter: include verse range only if it's a narrow focus.
-      const verseRange = span.maxVerse - span.minVerse;
-      if (verseRange < 10 && span.minVerse !== span.maxVerse) {
-        return `${bookName} ${span.start}:${span.minVerse}-${span.maxVerse}`;
-      }
-      return `${bookName} ${span.start}`;
-    }
-    return `${bookName} ${span.start}-${span.end}`;
-  });
+  return spans.slice(0, 3).map((span) =>
+    formatPassageRange(bookName, span.start, span.end, span.minVerse, span.maxVerse)
+  );
 }
 
-// Builds the narrative_reason string when detectNarrative returns a result.
+// Builds a genre-aware narrative_reason string when detectNarrative returns a result.
+// Emphasizes what kind of witness the narrative arc provides for the query.
 // Returns undefined for non-narrative books.
 function buildNarrativeReason(
   narrative: string | undefined,
   candidate: WitnessCandidate,
+  themesMatched?: string[],
 ): string | undefined {
   if (!narrative) return undefined;
-  return `The ${narrative} (${candidate.book_name} ${candidate.min_chapter}-${candidate.max_chapter}) addresses this theme through its narrative arc rather than systematic teaching.`;
+
+  const genre = BOOK_GENRE[candidate.book_name] ?? 'Unknown';
+  const chapterRange = `${candidate.book_name} ${candidate.min_chapter}–${candidate.max_chapter}`;
+
+  const topThemes = themesMatched && themesMatched.length > 0
+    ? themesMatched.slice(0, 2)
+    : [];
+  const themeClause = topThemes.length > 0
+    ? ` — particularly ${topThemes.join(' and ')}`
+    : '';
+
+  switch (genre) {
+    case 'Law':
+      return `The ${narrative} account (${chapterRange}) anchors the theme in covenant narrative and divine instruction${themeClause}, rather than abstract teaching.`;
+    case 'History':
+      return `The ${narrative} account (${chapterRange}) traces this theme through a sustained historical narrative${themeClause}, showing how it played out in Israel's story.`;
+    case 'Gospel':
+      return `The ${narrative} account (${chapterRange}) shows this theme in the life and ministry of Jesus${themeClause}, grounding it in the Gospel story.`;
+    default:
+      // Law-adjacent and other narrative sections default to a clear, readable form.
+      return `The ${narrative} narrative (${chapterRange}) engages this theme through story${themeClause} rather than systematic exposition.`;
+  }
+}
+
+// ─── Query-alignment scoring ──────────────────────────────────────────────────
+
+// Computes a [0, 1] query-alignment score for a book, representing how well the
+// book's evidence (matched topics + verse-level semantic hits) aligns with the
+// user's specific query — as opposed to the general topic domain.
+//
+// Inputs:
+//   candidateBookId      — the book being scored
+//   matchedTopicIds      — topic IDs that caused this book to appear
+//   topicRelevanceWeight — per-topic query-relevance weight (1.0 for LIKE, semantic score for Vectorize)
+//   semanticCoords       — verse-level Vectorize hit map (book_id:chapter:verse → score)
+//   semanticHitsPerBook  — count of verse-level semantic hits per book
+//   maxSemanticHits      — the highest per-book semantic hit count across all candidates
+//
+// The score combines two normalized signals:
+//   A) Topic query-alignment: average relevance weight of the book's matched topics.
+//      Topics with weight close to 1.0 were retrieved by exact keyword match
+//      (directly named in the query). Semantic-only topics have lower weights,
+//      reducing noise from loosely related categories.
+//   B) Semantic verse density: fraction of this book's verse hits relative to the
+//      book with the most hits. A book that absorbs many of the top Vectorize verse
+//      results is strongly aligned with the query's actual embedding.
+//
+// Final score = 0.5 * A + 0.5 * B  (equal-weight blend of both signals)
+function computeQueryAlignmentScore(
+  candidateBookId: number,
+  matchedTopicIds: number[],
+  topicRelevanceWeight: Map<number, number>,
+  semanticHitsPerBook: Map<number, number>,
+  maxSemanticHits: number,
+): number {
+  // Signal A: average query-relevance weight of matched topics.
+  let topicAlignmentScore = 0;
+  if (matchedTopicIds.length > 0) {
+    let weightSum = 0;
+    for (const tid of matchedTopicIds) {
+      weightSum += topicRelevanceWeight.get(tid) ?? 0.5;
+    }
+    topicAlignmentScore = weightSum / matchedTopicIds.length;
+  }
+
+  // Signal B: normalized semantic verse density.
+  const hits = semanticHitsPerBook.get(candidateBookId) ?? 0;
+  const semanticDensityScore = maxSemanticHits > 0 ? hits / maxSemanticHits : 0;
+
+  return 0.5 * topicAlignmentScore + 0.5 * semanticDensityScore;
+}
+
+// Builds a concise human-readable note explaining why this specific book's
+// evidence aligns with the user's actual query, connecting query terms to
+// the matched themes and semantic signals.
+//
+// This is distinct from match_reason (which describes genre-appropriate
+// contribution) and why_this_book_matters (which explains the book's broad
+// significance). This note is query-specific: it names the actual query topic
+// and the top matched themes, making clear the evidence is tailored to the
+// exact search rather than a generic topic association.
+function buildQueryAlignmentNote(
+  bookName: string,
+  queryTopic: string,
+  themesMatched: string[],
+  semanticHits: number,
+  queryAlignmentScore: number,
+): string {
+  const topThemes = themesMatched.slice(0, 2);
+  const themePhrase =
+    topThemes.length > 1
+      ? topThemes[0] + ' and ' + topThemes[1]
+      : topThemes[0] ?? queryTopic;
+
+  // Choose phrasing based on how well both signals fired.
+  const hasStrongSemanticSignal = semanticHits >= 2;
+  const hasStrongTopicAlignment = queryAlignmentScore >= 0.6;
+
+  if (hasStrongSemanticSignal && hasStrongTopicAlignment) {
+    return (
+      `${bookName}'s treatment of ${themePhrase} aligns closely with "${queryTopic}" ` +
+      `— supported by both curated topic matches and direct semantic verse similarity.`
+    );
+  }
+
+  if (hasStrongSemanticSignal) {
+    return (
+      `Multiple verses in ${bookName} are semantically close to "${queryTopic}", ` +
+      `indicating strong thematic resonance with the query beyond keyword matching.`
+    );
+  }
+
+  if (hasStrongTopicAlignment) {
+    return (
+      `${bookName}'s curated topics (${themePhrase}) are directly named in or closely ` +
+      `related to "${queryTopic}", making it a topically grounded witness.`
+    );
+  }
+
+  // Weak signal — acknowledge the association is present but indirect.
+  return (
+    `${bookName} addresses themes related to "${queryTopic}" (${themePhrase}), ` +
+    `though the connection is drawn from broader topical associations rather than direct keyword or semantic matches.`
+  );
 }
 
 // ─── Major witness builder ────────────────────────────────────────────────────
@@ -882,6 +1477,7 @@ async function buildMajorWitnesses(
     }
   >,
   semanticVerseMap: Map<string, VerseRow>,
+  queryTopic: string,
 ): Promise<MajorWitness[]> {
   const topicIds = expandedTopics.map((t) => t.id);
 
@@ -933,6 +1529,9 @@ async function buildMajorWitnesses(
   //   4. Book semantic score — Vectorize book-level embedding match
   //   5. Semantic verse hits — how many of the top verse-level embedding
   //      results land in this book (direct query-relevance signal)
+  // Pre-compute max semantic hits for normalization in query-alignment scoring.
+  const maxSemanticHits = Math.max(0, ...Array.from(semanticHitsPerBook.values()));
+
   const scored = qualified.map((candidate) => {
     const bookSemanticScore = bookSemanticScoreMap.get(candidate.book_id) ?? 0;
 
@@ -965,26 +1564,51 @@ async function buildMajorWitnesses(
       verseBreadth +
       bookSemanticScore * 3.0 +
       semVerseHits * 1.5;
-    return { candidate, witnessScore };
+
+    // Compute query-alignment score as a tiebreaker (does NOT replace witnessScore).
+    // This score reflects how well this book's evidence maps to the user's specific
+    // query terms — topic keyword relevance weights + normalized semantic verse density.
+    const matchedTopicIdsForAlignment = salienceTopicIds.filter((tid) => {
+      const topicName = expandedTopics.find((t) => t.id === tid)?.name;
+      if (!topicName) return false;
+      return candidate.topic_names
+        .split(',')
+        .map((n) => n.trim())
+        .includes(topicName);
+    });
+    const queryAlignmentScore = computeQueryAlignmentScore(
+      candidate.book_id,
+      matchedTopicIdsForAlignment,
+      topicRelevanceWeight,
+      semanticHitsPerBook,
+      maxSemanticHits,
+    );
+
+    return { candidate, witnessScore, queryAlignmentScore };
   });
 
-  scored.sort((a, b) => b.witnessScore - a.witnessScore);
+  // Primary sort: witnessScore descending.
+  // Tiebreaker: queryAlignmentScore descending — within a witnessScore band,
+  // prefer books whose evidence is more tightly coupled to the user's query.
+  scored.sort((a, b) => {
+    if (b.witnessScore !== a.witnessScore) return b.witnessScore - a.witnessScore;
+    return b.queryAlignmentScore - a.queryAlignmentScore;
+  });
   // DEBUG: log scored results
-  console.error(`[DEBUG] scored (top 15): ${scored.slice(0, 15).map(s => `${s.candidate.book_name}: ws=${s.witnessScore.toFixed(2)}, vc=${s.candidate.verse_count}, cc=${s.candidate.chapter_count}, sem=${(bookSemanticScoreMap.get(s.candidate.book_id) ?? 0).toFixed(3)}, sal=${(() => { let tot = 0; for (const tid of salienceTopicIds) { tot += salienceMap.get(s.candidate.book_id + ':' + tid) ?? 0; } return tot.toFixed(3); })()}, svh=${semanticHitsPerBook.get(s.candidate.book_id) ?? 0}`).join(' | ')}`);
+  console.error(`[DEBUG] scored (top 15): ${scored.slice(0, 15).map(s => `${s.candidate.book_name}: ws=${s.witnessScore.toFixed(2)}, qa=${s.queryAlignmentScore.toFixed(3)}, vc=${s.candidate.verse_count}, cc=${s.candidate.chapter_count}, sem=${(bookSemanticScoreMap.get(s.candidate.book_id) ?? 0).toFixed(3)}, sal=${(() => { let tot = 0; for (const tid of salienceTopicIds) { tot += salienceMap.get(s.candidate.book_id + ':' + tid) ?? 0; } return tot.toFixed(3); })()}, svh=${semanticHitsPerBook.get(s.candidate.book_id) ?? 0}`).join(' | ')}`);
   // Apply both a hard cap and a relative score cutoff so that:
   // - Queries with a clear top-N (large score gaps) return fewer witnesses
   // - Queries with many similarly-scored books (like "end times prophecy")
   //   return more witnesses to capture all relevant books
   const topScore = scored.length > 0 ? scored[0].witnessScore : 0;
   const cutoff = topScore * WITNESS_SCORE_CUTOFF;
-  const topCandidates = scored
+  const topScoredCandidates = scored
     .slice(0, MAX_MAJOR_WITNESSES)
-    .filter((s) => s.witnessScore >= cutoff)
-    .map((s) => s.candidate);
+    .filter((s) => s.witnessScore >= cutoff);
 
   // Build witnesses concurrently (representative verse may need D1 fallback).
   const witnesses: MajorWitness[] = await Promise.all(
-    topCandidates.map(async (candidate) => {
+    topScoredCandidates.map(async ({ candidate, witnessScore, queryAlignmentScore }) => {
       const matchedTopics = candidate.topic_names
         .split(',')
         .map((n) => n.trim())
@@ -996,20 +1620,23 @@ async function buildMajorWitnesses(
       );
       const narrative = detectNarrative(candidate, shortTopics);
 
+      // Resolve the topic IDs that caused this book to become a witness.
+      // These are the salienceTopicIds whose names appear in the candidate's
+      // topic_names list. We use them to prefer topic-grounded verses when
+      // selecting the representative verse.
+      const matchedTopicIds = expandedTopics
+        .filter((t) => matchedTopics.includes(t.name))
+        .map((t) => t.id);
+
       const representativeVerse = await fetchRepresentativeVerse(
         candidate,
+        matchedTopicIds,
         semanticCoords,
         semanticVerseMap,
       );
 
       // Build enrichment fields from in-memory data (no additional D1 queries).
-      const whyThisBookMatters = buildWhyThisBookMatters(
-        candidate,
-        salienceMap,
-        salienceTopicIds,
-        expandedTopics,
-      );
-
+      // Compute themesMatched first so it can inform the narrative explanations.
       const themesMatched = buildThemesMatched(
         candidate,
         expandedTopics,
@@ -1017,27 +1644,66 @@ async function buildMajorWitnesses(
         salienceTopicIds,
       );
 
+      const whyThisBookMatters = buildWhyThisBookMatters(
+        candidate,
+        salienceMap,
+        salienceTopicIds,
+        expandedTopics,
+        themesMatched,
+      );
+
       const totalBookChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? candidate.chapter_count;
       const anchorRows = anchorPassageData.get(candidate.book_id) ?? [];
+      const candidateGenre = BOOK_GENRE[candidate.book_name];
       const suggestedAnchorPassages = clusterToPassageRanges(
         anchorRows,
         candidate.book_name,
         totalBookChapters,
+        candidateGenre,
+        queryTopic,
       );
 
-      const narrativeReason = buildNarrativeReason(narrative, candidate);
+      const narrativeReason = buildNarrativeReason(narrative, candidate, themesMatched);
+
+      // Classify witness strength relative to the top-scoring witness.
+      // central  >= 0.75 of top score
+      // strong   >= 0.55 of top score (existing inclusion cutoff)
+      // supporting < 0.55 of top score (qualifies but below the hard cutoff)
+      let witness_strength: MajorWitness['witness_strength'];
+      if (topScore === 0 || witnessScore / topScore >= 0.75) {
+        witness_strength = 'central';
+      } else if (witnessScore / topScore >= 0.55) {
+        witness_strength = 'strong';
+      } else {
+        witness_strength = 'supporting';
+      }
+
+      // Build a human-readable explanation connecting this book's evidence to
+      // the user's specific query. Uses the query-alignment score and per-book
+      // semantic hit count already computed during witness scoring.
+      const semanticHits = semanticHitsPerBook.get(candidate.book_id) ?? 0;
+      const queryAlignmentNote = buildQueryAlignmentNote(
+        candidate.book_name,
+        queryTopic,
+        themesMatched,
+        semanticHits,
+        queryAlignmentScore,
+      );
 
       const witness: MajorWitness = {
         book: candidate.book_name,
         testament: candidate.testament,
+        genre: BOOK_GENRE[candidate.book_name] ?? 'Unknown',
         verse_count: candidate.verse_count,
         chapter_count: candidate.chapter_count,
         matched_topics: matchedTopics.slice(0, 10),
-        match_reason: buildWitnessMatchReason(candidate, narrative),
+        match_reason: buildWitnessMatchReason(candidate, narrative, themesMatched),
+        witness_strength,
         representative_verse: representativeVerse,
         why_this_book_matters: whyThisBookMatters,
         themes_matched: themesMatched,
         suggested_anchor_passages: suggestedAnchorPassages,
+        query_alignment_note: queryAlignmentNote,
       };
 
       if (narrative !== undefined) {
@@ -1423,7 +2089,7 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
   // Phase 3 (was Phase 2): Build major witnesses using semantic topics + book scores + salience.
   const majorWitnesses =
     finalExpandedTopics.length > 0
-      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap)
+      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap, topic)
       : [];
 
   // Phase 4: Existing merge + witness interleave + match reasons.
@@ -1634,13 +2300,14 @@ topicalSearch.description =
   'Combines Nave\'s curated Topical Bible (5,319 categories) with AI semantic search. ' +
   'Works for single topics ("forgiveness", "prayer") and compound themes ("God\'s faithfulness during suffering", "hope in the face of death"). ' +
   'Prefer this over semantic_search when the answer should include major biblical witnesses across passages, narratives, books, or genres. ' +
-  '(Note: For narrative-heavy witnesses, narrative_reason provides additional context beyond match_reason.)';
+  'Major witnesses include witness_strength (central/strong/supporting) and query_alignment_note to explain how the book\'s evidence connects to your query. ' +
+  'For deeper study: use cross_references to expand a verse found in the results, semantic_search for additional verse-level discovery, or word_study for original-language analysis of key terms.';
 
 topicalSearch.input = {
   topic: T.string({
     required: true,
     description:
-      'The topic to search for (e.g., "forgiveness", "prayer", "faith", "love"). ' +
+      'The topic to search for. Accepts single topics (e.g., "forgiveness", "prayer") or compound themes (e.g., "God\'s faithfulness during suffering"). ' +
       'Nave\'s index is searched by keyword match; semantic search finds conceptually related verses.',
     minLength: 1,
   }),
@@ -1654,3 +2321,17 @@ topicalSearch.input = {
 };
 
 export default topicalSearch;
+
+// Named exports for unit testing genre-aware explanation templates, theme mapping,
+// genre-aware clustering strategies, and query-alignment scoring.
+export {
+  buildWhyThisBookMatters,
+  buildWitnessMatchReason,
+  buildNarrativeReason,
+  buildThemesMatched,
+  toThemeLabel,
+  clusterToPassageRanges,
+  isConsolationQuery,
+  computeQueryAlignmentScore,
+  buildQueryAlignmentNote,
+};

@@ -217,7 +217,8 @@ findText.annotations = {
 findText.description =
   'Keyword search — finds Bible verses containing specific words or phrases in their actual text. Use when you know the exact wording: "consider the lilies", "fear not", "in the beginning". ' +
   'Multi-word queries match all words in any order; wrap in double quotes for exact phrase matching. ' +
-  'This is a text-match tool, not a thematic retrieval tool. Returns results in canonical order (Genesis to Revelation). Optionally filter by translation.';
+  'This is a text-match tool, not a thematic retrieval tool. For thematic or narrative-level retrieval, use topical_search instead. ' +
+  'Returns results in canonical order (Genesis to Revelation). Optionally filter by translation.';
 
 findText.input = {
   query: T.string({

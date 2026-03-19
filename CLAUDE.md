@@ -66,6 +66,17 @@ Violating this boundary causes Cloudflare Workers deployment failure (error 1002
 
 **Schema system:** The `T` namespace provides type-safe schema builders (`.string()`, `.number()`, `.boolean()`, etc.) with validation constraints.
 
+### Tool Descriptions — Dual Purpose Design
+
+Tool descriptions (`.description` on each handler in `src/tools/*.ts`) serve two purposes:
+
+1. **Usage documentation** — What the tool does, its parameters, and output shape
+2. **Client routing** — Guide MCP clients toward complementary tools for comprehensive results
+
+Every tool description should tell a client not just what THIS tool does, but what OTHER tools to use next. For example, `topical_search` points clients to `cross_references` (expand an anchor verse), `semantic_search` (additional verse-level discovery), and `word_study` (original-language depth). This creates a discoverable workflow graph that helps AI clients produce thorough Bible study sessions.
+
+**When modifying tool descriptions:** Preserve cross-tool routing. Check the routing matrix — every search-surface tool should point to at least one complement. Endpoint tools (`compare_translations`, `cross_references`) may omit outbound routing.
+
 ### Vectorize Indices
 
 The server uses two Vectorize indices for semantic search:
@@ -112,9 +123,11 @@ Runs parallel watch mode:
 - `dev:build` — esbuild watch (rebuilds on source changes)
 - `dev:server` — mctx-dev hot-reloads server on rebuild
 
-**Test environment variables during dev:**
+**Environment setup:** Copy `.env.example` to `.env` and fill in your Cloudflare credentials. The `.env` file is required for both `npm run dev` and `npm test` (integration tests hit live Cloudflare APIs).
+
 ```bash
-CLOUDFLARE_ACCOUNT_ID="..." CLOUDFLARE_API_TOKEN="..." npm run dev
+cp .env.example .env
+# Fill in CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, D1_DATABASE_ID
 ```
 
 ### Testing
