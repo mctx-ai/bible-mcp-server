@@ -61,6 +61,11 @@ const VECTORIZE_OVERFETCH_MULTIPLIER = 8;
 
 const MAJOR_WITNESS_MIN_VERSES = 5;
 const MAJOR_WITNESS_MIN_CHAPTERS = 2;
+// In narrative mode, non-primary books need higher thresholds to qualify.
+// This prevents loosely related books (e.g. Exodus, Numbers for a Noah query)
+// from appearing as witnesses when they only carry a handful of tangential verses.
+const MAJOR_WITNESS_MIN_VERSES_NARRATIVE_NON_PRIMARY = 8;
+const MAJOR_WITNESS_MIN_CHAPTERS_NARRATIVE_NON_PRIMARY = 3;
 const MAX_MAJOR_WITNESSES = 12;
 // For narrative-mode queries (specific stories/figures), cap witnesses tightly.
 const MAX_MAJOR_WITNESSES_NARRATIVE = 5;
@@ -878,10 +883,18 @@ async function fetchRepresentativeVerse(
   }
 
   // First pass: find the highest-scoring Vectorize hit that is also topic-matched.
+  // Topic-matched verses receive a +0.05 bonus to their effective score so they
+  // are preferred more aggressively over semantically similar but unmapped verses.
+  const TOPIC_MATCH_BONUS = 0.05;
+  // Within 0.01 of the best effective score, prefer the lower chapter:verse for stability.
+  const SCORE_TIE_BAND = 0.01;
+
+  let bestTopicEffectiveScore = -Infinity;
   let bestTopicScore = -Infinity;
   let bestTopicVerseRow: VerseRow | undefined;
 
   // Second pass fallback: any Vectorize hit in the book (if no topic-matched hits).
+  let bestAnyEffectiveScore = -Infinity;
   let bestAnyScore = -Infinity;
   let bestAnyVerseRow: VerseRow | undefined;
 
@@ -890,18 +903,43 @@ async function fetchRepresentativeVerse(
     const verseRow = semanticVerseMap.get(coordKey);
     if (!verseRow) continue;
 
-    if (coord.score > bestAnyScore) {
+    const isTopicMatched = topicMatchedKeys !== null && topicMatchedKeys.has(coordKey);
+    const effectiveScore = coord.score + (isTopicMatched ? TOPIC_MATCH_BONUS : 0);
+
+    // Deterministic tiebreaker: within SCORE_TIE_BAND, prefer lower chapter then lower verse.
+    const isAnyBetter =
+      effectiveScore > bestAnyEffectiveScore + SCORE_TIE_BAND ||
+      (Math.abs(effectiveScore - bestAnyEffectiveScore) <= SCORE_TIE_BAND &&
+        bestAnyVerseRow !== undefined &&
+        (verseRow.chapter < bestAnyVerseRow.chapter ||
+          (verseRow.chapter === bestAnyVerseRow.chapter && verseRow.verse < bestAnyVerseRow.verse)));
+
+    if (isAnyBetter) {
+      bestAnyEffectiveScore = effectiveScore;
       bestAnyScore = coord.score;
       bestAnyVerseRow = verseRow;
     }
 
-    if (topicMatchedKeys && topicMatchedKeys.has(coordKey)) {
-      if (coord.score > bestTopicScore) {
+    if (isTopicMatched) {
+      const isTopicBetter =
+        effectiveScore > bestTopicEffectiveScore + SCORE_TIE_BAND ||
+        (Math.abs(effectiveScore - bestTopicEffectiveScore) <= SCORE_TIE_BAND &&
+          bestTopicVerseRow !== undefined &&
+          (verseRow.chapter < bestTopicVerseRow.chapter ||
+            (verseRow.chapter === bestTopicVerseRow.chapter && verseRow.verse < bestTopicVerseRow.verse)));
+
+      if (isTopicBetter) {
+        bestTopicEffectiveScore = effectiveScore;
         bestTopicScore = coord.score;
         bestTopicVerseRow = verseRow;
       }
     }
   }
+
+  // Suppress unused variable warning — bestTopicScore and bestAnyScore are intentionally
+  // retained for potential future debug logging without affecting runtime behavior.
+  void bestTopicScore;
+  void bestAnyScore;
 
   // Prefer topic-matched + semantic verse, fall back to any semantic verse.
   const chosen = bestTopicVerseRow ?? bestAnyVerseRow;
@@ -1148,34 +1186,57 @@ const TOPIC_LABEL_MAP: Record<string, string> = {
   'AFFLICTIONS AND ADVERSITIES': 'affliction',
   'AFFLICTIONS': 'affliction',
   'ADVERSITY': 'adversity',
+  'ANGER': 'anger',
   'ANXIETY': 'anxiety',
+  'APOSTASY': 'apostasy',
   'ATONEMENT': 'atonement',
   'BAPTISM': 'baptism',
   'BLESSINGS': 'blessing',
   'CALLING': 'calling',
   'CHARITY': 'generosity',
+  'CHILDREN': 'children',
+  'CHILDREN OF ISRAEL': 'Israel',
   'CHRIST': 'Christ',
   'CHURCH': 'the church',
   'COMFORT': 'comfort',
+  'COMMANDMENTS': 'commandments',
   'COMPASSION': 'compassion',
+  'CONSCIENCE': 'conscience',
+  'CONTENTMENT': 'contentment',
+  'COURAGE': 'courage',
   'COVENANT': 'covenant',
+  'COVETOUSNESS': 'covetousness',
   'CREATION': 'creation',
   'DEATH': 'death',
   'DELIVERANCE': 'deliverance',
   'DISCIPLESHIP': 'discipleship',
+  'DISCIPLINE': 'discipline',
+  'DIVINE GUIDANCE': 'guidance',
+  'DIVINE PROTECTION': 'protection',
+  'DIVINE SOVEREIGNTY': 'sovereignty',
+  'DOUBT': 'doubt',
   'ELECTION': 'election',
   'ENDURANCE': 'endurance',
   'ETERNAL LIFE': 'eternal life',
+  'EVANGELISM': 'evangelism',
+  'EVIL': 'evil',
+  'EXILE': 'exile',
   'FAITH': 'faith',
   'FAITHFULNESS': 'faithfulness',
+  'FAMILY': 'family',
+  'FASTING': 'fasting',
   'FEAR': 'fear',
+  'FEAR OF GOD': 'fear of God',
   'FORGIVENESS': 'forgiveness',
+  'FRIENDSHIP': 'friendship',
+  'GENEROSITY': 'generosity',
   'GLORIFICATION': 'glorification',
   'GLORY': 'glory',
   'GOD': 'God',
   'GRACE': 'grace',
   'GRATITUDE': 'gratitude',
   'GRIEF': 'grief',
+  'GUIDANCE': 'guidance',
   'HEALING': 'healing',
   'HOLINESS': 'holiness',
   'HOLY SPIRIT': 'the Holy Spirit',
@@ -1190,40 +1251,102 @@ const TOPIC_LABEL_MAP: Record<string, string> = {
   'KINGDOM OF GOD': 'the kingdom of God',
   'LAW': 'the law',
   'LAMENT': 'lament',
+  'LEADERSHIP': 'leadership',
+  'LIGHT': 'light',
+  'LONELINESS': 'loneliness',
+  'LORD': 'the Lord',
   'LOVE': 'love',
+  'LOVE OF GOD': 'God\'s love',
+  'MARRIAGE': 'marriage',
   'MERCY': 'mercy',
+  'MISSIONS': 'missions',
   'OBEDIENCE': 'obedience',
+  'OMNIPOTENCE': 'God\'s power',
   'PATIENCE': 'patience',
   'PEACE': 'peace',
+  'PERSEVERANCE': 'perseverance',
+  'PRAISE': 'praise',
   'PRAYER': 'prayer',
+  'PRIDE': 'pride',
   'PROPHECY': 'prophecy',
+  'PROVIDENCE': 'providence',
+  'PURIFICATION': 'purification',
   'REDEMPTION': 'redemption',
+  'RENEWAL': 'renewal',
   'REPENTANCE': 'repentance',
+  'RESTORATION': 'restoration',
   'RESURRECTION': 'resurrection',
   'REVELATION': 'revelation',
   'RIGHTEOUSNESS': 'righteousness',
   'SACRIFICE': 'sacrifice',
   'SALVATION': 'salvation',
   'SANCTIFICATION': 'sanctification',
+  'SERVANT': 'servanthood',
+  'SERVICE': 'service',
   'SIN': 'sin',
+  'SOVEREIGNTY OF GOD': 'God\'s sovereignty',
+  'STRENGTH': 'strength',
   'SUFFERING': 'suffering',
   'TEMPTATION': 'temptation',
   'THANKSGIVING': 'thanksgiving',
+  'TRIALS': 'trials',
   'TRUST': 'trust',
   'TRUTH': 'truth',
   'UNFAITHFULNESS': 'unfaithfulness',
+  'UNITY': 'unity',
+  'VICTORY': 'victory',
   'WISDOM': 'wisdom',
   'WORKS': 'works',
   'WORSHIP': 'worship',
+  'WRATH': 'wrath',
+  'WRATH OF GOD': 'God\'s wrath',
 };
 
 // Transforms a raw Nave's topic name into a user-facing thematic label.
-// Checks the explicit map first; falls back to a lowercase-and-clean transform.
+// Checks the explicit map first; falls back to a normalized transform:
+//   1. Lowercase the raw name
+//   2. Handle "X OF Y" genitive patterns → possessive or compact form
+//      e.g. "CHILDREN OF ISRAEL" → "Israel's children", "LOVE OF GOD" → "God's love"
+//   3. Strip leading articles ("the ", "a ", "an ")
+//   4. Remove " and " conjunctions that create verbose compound labels
+//      (e.g. "afflictions and adversities" → "affliction")
+//      only when it would shorten to a single recognizable word
+//   5. Title-case proper nouns that appear after "of" (names, God)
 function toThemeLabel(topicName: string): string {
   const mapped = TOPIC_LABEL_MAP[topicName];
   if (mapped !== undefined) return mapped;
-  // Fallback: lowercase and replace ' AND ' with ' and '.
-  return topicName.toLowerCase().replace(/ and /gi, ' and ');
+
+  let label = topicName.toLowerCase();
+
+  // Handle "X OF Y" genitive patterns for proper nouns.
+  // Match patterns like "love of god", "children of israel", "grace of christ".
+  const ofMatch = label.match(/^(.+?) of (god|christ|jesus|israel|the lord|the holy spirit)$/);
+  if (ofMatch) {
+    const subject = ofMatch[1].trim();
+    const owner = ofMatch[2].replace(/^the /, '');
+    // Title-case the owner name.
+    const ownerLabel = owner.charAt(0).toUpperCase() + owner.slice(1);
+    return `${ownerLabel}'s ${subject}`;
+  }
+
+  // Strip leading articles: "the ", "a ", "an ".
+  label = label.replace(/^(the |a |an )/, '');
+
+  // Collapse " and " conjunctions in compound topic names:
+  // keep the first part when the compound is just two near-synonyms.
+  // e.g. "afflictions and adversities" → "affliction" (already mapped, but as fallback)
+  // Only collapse when the resulting first word is >= 5 chars (avoids collapsing "sin and grace").
+  const andParts = label.split(' and ');
+  if (andParts.length === 2) {
+    const first = andParts[0].trim();
+    const second = andParts[1].trim();
+    // If both parts share a root (first 5 chars), keep just the shorter one.
+    if (first.length >= 5 && second.length >= 5 && first.slice(0, 5) === second.slice(0, 5)) {
+      label = first.length <= second.length ? first : second;
+    }
+  }
+
+  return label;
 }
 
 // Minimum salience score for a topic to appear in themes_matched output.
@@ -1768,11 +1891,32 @@ async function buildMajorWitnesses(
   ]);
 
   // Filter to qualified witnesses only.
-  const qualified = candidates.filter(
-    (c) =>
+  // In narrative mode, non-primary books must clear higher thresholds to prevent
+  // loosely related books (e.g. Exodus, Numbers for a Noah query) from qualifying.
+  // The primary narrative book is the top verse_count candidate (candidates is
+  // sorted descending by verse_count from aggregateWitnesses).
+  const isNarrativeModeForFilter = narrativeContext?.narrativeMode === true;
+  const narrativePrimaryBookIdForFilter =
+    isNarrativeModeForFilter && candidates.length > 0
+      ? candidates[0].book_id
+      : undefined;
+
+  const qualified = candidates.filter((c) => {
+    if (
+      isNarrativeModeForFilter &&
+      c.book_id !== narrativePrimaryBookIdForFilter
+    ) {
+      // Non-primary book in narrative mode: apply stricter thresholds.
+      return (
+        c.verse_count >= MAJOR_WITNESS_MIN_VERSES_NARRATIVE_NON_PRIMARY &&
+        c.chapter_count >= MAJOR_WITNESS_MIN_CHAPTERS_NARRATIVE_NON_PRIMARY
+      );
+    }
+    return (
       c.verse_count >= MAJOR_WITNESS_MIN_VERSES &&
-      c.chapter_count >= MAJOR_WITNESS_MIN_CHAPTERS,
-  );
+      c.chapter_count >= MAJOR_WITNESS_MIN_CHAPTERS
+    );
+  });
 
   // Score candidates using five complementary signals:
   //   1. Salience (pre-computed topical centrality) — dominant when available
@@ -1811,9 +1955,15 @@ async function buildMajorWitnesses(
     const semVerseHits = semanticHitsPerBook.get(candidate.book_id) ?? 0;
 
     const verseBreadth = Math.log2(candidate.verse_count + 1);
+    // In narrative mode, reduce chapterCoverage dominance so that broad books
+    // (e.g. Genesis with 50 chapters) don't outrank tightly story-relevant
+    // secondary witnesses (e.g. Hebrews 11, 1 Peter 3 for Noah). Instead,
+    // totalSalience is elevated so topical relevance dominates over breadth.
+    const salienceWeight = isNarrativeModeForFilter ? 4.5 : 3.0;
+    const chapterCoverageWeight = isNarrativeModeForFilter ? 2.0 : 4.0;
     const witnessScore =
-      totalSalience * 3.0 +
-      chapterCoverage * 4.0 +
+      totalSalience * salienceWeight +
+      chapterCoverage * chapterCoverageWeight +
       verseBreadth +
       bookSemanticScore * 3.0 +
       semVerseHits * 1.5;
@@ -1930,7 +2080,21 @@ async function buildMajorWitnesses(
       );
 
       const totalBookChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? candidate.chapter_count;
-      const anchorRows = anchorPassageData.get(candidate.book_id) ?? [];
+      const rawAnchorRows = anchorPassageData.get(candidate.book_id) ?? [];
+      // In narrative mode, constrain the anchor data for the primary narrative
+      // book to only chapters within the story's span (min_chapter–max_chapter).
+      // Without this filter, clusterNarrative would operate over the full book
+      // (e.g. all 50 Genesis chapters for Noah) and pick arc representatives
+      // scattered across unrelated content. Filtering first collapses the anchor
+      // to the narrative block (Genesis 6-9 for Noah) before any clustering runs.
+      const anchorRows =
+        isNarrativeMode && candidate.book_id === primaryBookId
+          ? rawAnchorRows.filter(
+              (r) =>
+                r.chapter >= candidate.min_chapter &&
+                r.chapter <= candidate.max_chapter,
+            )
+          : rawAnchorRows;
       const candidateGenre = BOOK_GENRE[candidate.book_name];
       const suggestedAnchorPassages = clusterToPassageRanges(
         anchorRows,
