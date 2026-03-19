@@ -486,7 +486,10 @@ searchBible.annotations = {
 };
 
 searchBible.description =
-  'Semantic similarity search — finds Bible verses whose meaning matches your query, even when the exact words differ. Use this for exploratory questions when you don\'t know which passages are relevant. For established theological topics (faith, grace, suffering) or "what does the Bible say about X?" questions, prefer topical_search which adds curated Nave\'s context and identifies major biblical witnesses. Filters: translation, book, testament (OT/NT).';
+  'Semantic similarity search — finds Bible verses whose meaning matches your query, even when the exact words differ. Best for exploratory discovery of related verses when the user does not know exact wording or references. ' +
+  'Good for metaphor, imagery, or concept matching such as "living water", "God as shepherd", or "light as holiness". ' +
+  'Do not use as the primary tool for broad theological questions like "What does the Bible say about X?" or for themes whose main witnesses may be books, narratives, or large passages rather than isolated verses. ' +
+  'For those, prefer topical_search instead. Filters: translation, book, testament (OT/NT).';
 
 searchBible.input = {
   query: T.string({

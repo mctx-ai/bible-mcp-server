@@ -38,6 +38,10 @@ interface MajorWitness {
     text: string;
     citation: Citation;
   };
+  why_this_book_matters?: string;
+  themes_matched?: string[];
+  suggested_anchor_passages?: string[];
+  narrative_reason?: string;
 }
 
 interface TopicalSearchResponse {
@@ -647,6 +651,219 @@ async function fetchRepresentativeVerse(
   };
 }
 
+// ─── Enrichment helpers ───────────────────────────────────────────────────────
+
+// Builds a human-readable sentence explaining why a book is a principal witness.
+// Uses pre-computed salience data to find the 2-3 most central topics for this
+// book, then synthesizes a sentence. Falls back to topic_names when salience
+// data is unavailable.
+function buildWhyThisBookMatters(
+  candidate: WitnessCandidate,
+  salienceMap: Map<string, number>,
+  salienceTopicIds: number[],
+  expandedTopics: Array<{ id: number; name: string }>,
+): string {
+  // Collect per-topic salience scores for this book.
+  const topicById = new Map(expandedTopics.map((t) => [t.id, t.name]));
+  const scored: Array<{ name: string; salience: number }> = [];
+
+  for (const topicId of salienceTopicIds) {
+    const salience = salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
+    const name = topicById.get(topicId);
+    if (name && salience > 0) {
+      scored.push({ name, salience });
+    }
+  }
+
+  scored.sort((a, b) => b.salience - a.salience);
+  const top = scored.slice(0, 3);
+
+  if (top.length > 0) {
+    const topicList = top.map((t) => t.name).join(', ');
+    const totalChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? candidate.chapter_count;
+    const coveragePct = Math.round((candidate.chapter_count / totalChapters) * 100);
+    return `${candidate.book_name} concentrates on ${topicList}, with ${candidate.verse_count} topical references spanning ${coveragePct}% of the book.`;
+  }
+
+  // Fallback: use first 2-3 topic names from the candidate directly.
+  const fallbackTopics = candidate.topic_names
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(', ');
+
+  return fallbackTopics
+    ? `${candidate.book_name} addresses ${fallbackTopics} with ${candidate.verse_count} topical references across ${candidate.chapter_count} chapters.`
+    : `${candidate.book_name} is a principal witness with ${candidate.verse_count} topical references.`;
+}
+
+// Builds the list of query-relevant themes for a witness book.
+// Filters topic_names to only those topics that appear in expandedTopics
+// (the query-matched topic set), then sorts by salience descending.
+function buildThemesMatched(
+  candidate: WitnessCandidate,
+  expandedTopics: Array<{ id: number; name: string }>,
+  salienceMap: Map<string, number>,
+  salienceTopicIds: number[],
+): string[] {
+  const expandedNameSet = new Set(expandedTopics.map((t) => t.name));
+
+  const candidateTopics = candidate.topic_names
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+  // Keep only topics that are in the query-matched expanded topic set.
+  const matched = candidateTopics.filter((name) => expandedNameSet.has(name));
+
+  if (matched.length === 0) {
+    // Fallback: return first 5 topics from candidate.
+    return candidateTopics.slice(0, 5);
+  }
+
+  // Build a salience score lookup by topic name for this book.
+  const topicIdByName = new Map(expandedTopics.map((t) => [t.name, t.id]));
+  const getSalience = (name: string): number => {
+    const topicId = topicIdByName.get(name);
+    if (!topicId || !salienceTopicIds.includes(topicId)) return 0;
+    return salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
+  };
+
+  matched.sort((a, b) => getSalience(b) - getSalience(a));
+  return matched;
+}
+
+// Row shape returned by the anchor passage batch query.
+interface AnchorChapterRow {
+  book_id: number;
+  chapter: number;
+  min_verse: number;
+  max_verse: number;
+  hit_count: number;
+}
+
+// Issues a single batch D1 query to retrieve chapter-level verse density for
+// all witness books × matched topics. Returns a map from book_id to sorted
+// chapter rows (ascending chapter order).
+async function fetchAnchorPassageData(
+  expandedTopicIds: number[],
+  candidateBookIds: number[],
+): Promise<Map<number, AnchorChapterRow[]>> {
+  if (expandedTopicIds.length === 0 || candidateBookIds.length === 0) {
+    return new Map();
+  }
+
+  const topicPlaceholders = expandedTopicIds.map(() => '?').join(', ');
+  const bookPlaceholders = candidateBookIds.map(() => '?').join(', ');
+
+  const result = await d1.query(
+    `SELECT book_id, chapter, MIN(verse) AS min_verse, MAX(verse) AS max_verse, COUNT(*) AS hit_count
+     FROM nave_topic_verses
+     WHERE topic_id IN (${topicPlaceholders})
+       AND book_id IN (${bookPlaceholders})
+     GROUP BY book_id, chapter
+     ORDER BY book_id, chapter`,
+    [...expandedTopicIds, ...candidateBookIds],
+  );
+
+  const byBook = new Map<number, AnchorChapterRow[]>();
+  for (const row of result.results) {
+    const bookId = row['book_id'] as number;
+    if (!byBook.has(bookId)) byBook.set(bookId, []);
+    byBook.get(bookId)!.push({
+      book_id: bookId,
+      chapter: row['chapter'] as number,
+      min_verse: row['min_verse'] as number,
+      max_verse: row['max_verse'] as number,
+      hit_count: row['hit_count'] as number,
+    });
+  }
+
+  return byBook;
+}
+
+// Clusters chapter rows for a single book into passage range strings.
+// Consecutive chapters (gap <= 2) are merged into spans. Short books whose
+// coverage >= 80% of total chapters collapse to just the book name.
+// Returns at most 3 passage ranges.
+function clusterToPassageRanges(
+  rows: AnchorChapterRow[],
+  bookName: string,
+  totalBookChapters: number,
+): string[] {
+  if (rows.length === 0) return [];
+
+  // Short book: if coverage spans >= 80% of the book, just return the book name.
+  const minChapter = Math.min(...rows.map((r) => r.chapter));
+  const maxChapter = Math.max(...rows.map((r) => r.chapter));
+  const spanCount = maxChapter - minChapter + 1;
+  if (spanCount >= totalBookChapters * 0.8 && totalBookChapters <= 5) {
+    return [bookName];
+  }
+
+  // Filter chapters with at least 2 hits to avoid sparse anchors (unless the
+  // entire book is sparse, in which case keep the 3 highest-hit chapters).
+  const MIN_HIT_THRESHOLD = 2;
+  let qualifying = rows.filter((r) => r.hit_count >= MIN_HIT_THRESHOLD);
+  if (qualifying.length === 0) {
+    // Sparse coverage: take the top 3 chapters by hit count.
+    qualifying = [...rows].sort((a, b) => b.hit_count - a.hit_count).slice(0, 3);
+  }
+
+  // Sort qualifying chapters by hit count descending to pick the densest first,
+  // then re-sort by chapter number before clustering.
+  qualifying.sort((a, b) => b.hit_count - a.hit_count);
+  // Take the top chapters (cap to avoid too many small ranges).
+  const topChapters = qualifying.slice(0, 12);
+  topChapters.sort((a, b) => a.chapter - b.chapter);
+
+  // Cluster consecutive chapters (gap <= 2) into spans.
+  const spans: Array<{ start: number; end: number; totalHits: number; minVerse: number; maxVerse: number }> = [];
+  let currentSpan: typeof spans[0] | null = null;
+
+  for (const row of topChapters) {
+    if (!currentSpan) {
+      currentSpan = { start: row.chapter, end: row.chapter, totalHits: row.hit_count, minVerse: row.min_verse, maxVerse: row.max_verse };
+    } else if (row.chapter - currentSpan.end <= 2) {
+      currentSpan.end = row.chapter;
+      currentSpan.totalHits += row.hit_count;
+      currentSpan.minVerse = Math.min(currentSpan.minVerse, row.min_verse);
+      currentSpan.maxVerse = Math.max(currentSpan.maxVerse, row.max_verse);
+    } else {
+      spans.push(currentSpan);
+      currentSpan = { start: row.chapter, end: row.chapter, totalHits: row.hit_count, minVerse: row.min_verse, maxVerse: row.max_verse };
+    }
+  }
+  if (currentSpan) spans.push(currentSpan);
+
+  // Sort spans by aggregate hit count descending.
+  spans.sort((a, b) => b.totalHits - a.totalHits);
+
+  // Emit up to 3 passage range strings.
+  return spans.slice(0, 3).map((span) => {
+    if (span.start === span.end) {
+      // Single chapter: include verse range only if it's a narrow focus.
+      const verseRange = span.maxVerse - span.minVerse;
+      if (verseRange < 10 && span.minVerse !== span.maxVerse) {
+        return `${bookName} ${span.start}:${span.minVerse}-${span.maxVerse}`;
+      }
+      return `${bookName} ${span.start}`;
+    }
+    return `${bookName} ${span.start}-${span.end}`;
+  });
+}
+
+// Builds the narrative_reason string when detectNarrative returns a result.
+// Returns undefined for non-narrative books.
+function buildNarrativeReason(
+  narrative: string | undefined,
+  candidate: WitnessCandidate,
+): string | undefined {
+  if (!narrative) return undefined;
+  return `The ${narrative} (${candidate.book_name} ${candidate.min_chapter}-${candidate.max_chapter}) addresses this theme through its narrative arc rather than systematic teaching.`;
+}
+
 // ─── Major witness builder ────────────────────────────────────────────────────
 
 async function buildMajorWitnesses(
@@ -696,7 +913,10 @@ async function buildMajorWitnesses(
   // from related categories (e.g., AFFLICTIONS for SUFFERING queries) that the
   // narrow seed topics alone would miss.
   const candidateBookIds = candidates.map((c) => c.book_id);
-  const salienceMap = await fetchSalience(salienceTopicIds, candidateBookIds);
+  const [salienceMap, anchorPassageData] = await Promise.all([
+    fetchSalience(salienceTopicIds, candidateBookIds),
+    fetchAnchorPassageData(topicIds, candidateBookIds),
+  ]);
 
   // Filter to qualified witnesses only.
   const qualified = candidates.filter(
@@ -782,6 +1002,31 @@ async function buildMajorWitnesses(
         semanticVerseMap,
       );
 
+      // Build enrichment fields from in-memory data (no additional D1 queries).
+      const whyThisBookMatters = buildWhyThisBookMatters(
+        candidate,
+        salienceMap,
+        salienceTopicIds,
+        expandedTopics,
+      );
+
+      const themesMatched = buildThemesMatched(
+        candidate,
+        expandedTopics,
+        salienceMap,
+        salienceTopicIds,
+      );
+
+      const totalBookChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? candidate.chapter_count;
+      const anchorRows = anchorPassageData.get(candidate.book_id) ?? [];
+      const suggestedAnchorPassages = clusterToPassageRanges(
+        anchorRows,
+        candidate.book_name,
+        totalBookChapters,
+      );
+
+      const narrativeReason = buildNarrativeReason(narrative, candidate);
+
       const witness: MajorWitness = {
         book: candidate.book_name,
         testament: candidate.testament,
@@ -790,10 +1035,17 @@ async function buildMajorWitnesses(
         matched_topics: matchedTopics.slice(0, 10),
         match_reason: buildWitnessMatchReason(candidate, narrative),
         representative_verse: representativeVerse,
+        why_this_book_matters: whyThisBookMatters,
+        themes_matched: themesMatched,
+        suggested_anchor_passages: suggestedAnchorPassages,
       };
 
       if (narrative !== undefined) {
         witness.narrative = narrative;
+      }
+
+      if (narrativeReason !== undefined) {
+        witness.narrative_reason = narrativeReason;
       }
 
       return witness;
@@ -1377,11 +1629,11 @@ topicalSearch.annotations = {
 };
 
 topicalSearch.description =
-  'Research what the Bible teaches about a topic — the best tool for "what does the Bible say about X?" questions. ' +
+  'Research what the Bible teaches about a topic. Best for broad theological questions, especially "What does the Bible say about X?" queries. ' +
+  'Returns both direct verse hits and major_witnesses: the books, narratives, and passages that are the Bible\'s principal treatments of the topic. ' +
   'Combines Nave\'s curated Topical Bible (5,319 categories) with AI semantic search. ' +
-  'Returns individual verses with source attribution AND major_witnesses: the books and narratives that are the Bible\'s principal treatments of the topic ' +
-  '(e.g., Job for suffering, Psalms for lament). ' +
-  'Works for single topics ("forgiveness", "prayer") and compound themes ("God\'s faithfulness during suffering", "hope in the face of death").';
+  'Works for single topics ("forgiveness", "prayer") and compound themes ("God\'s faithfulness during suffering", "hope in the face of death"). ' +
+  'Prefer this over semantic_search when the answer should include major biblical witnesses across passages, narratives, books, or genres.';
 
 topicalSearch.input = {
   topic: T.string({

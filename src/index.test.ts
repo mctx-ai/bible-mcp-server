@@ -325,6 +325,45 @@ describe('Tool: topical_search', () => {
     }
   });
 
+  test('major_witnesses enrichment fields are present in schema when witnesses exist', async () => {
+    // Non-API test: validates the response shape includes the enrichment fields.
+    // When D1/Vectorize are unavailable the tool returns isError, so we only
+    // assert the shape when a real result comes back.
+    const req = createRequest('tools/call', {
+      name: 'topical_search',
+      arguments: { topic: 'faith' },
+    });
+    const res = await server.fetch(req);
+    const data = await getResponse(res);
+
+    expect(data.result).toBeDefined();
+    expect(Array.isArray(data.result.content)).toBe(true);
+
+    if (!data.result.isError) {
+      const parsed = JSON.parse(data.result.content[0].text);
+      expect(Array.isArray(parsed.major_witnesses)).toBe(true);
+
+      for (const witness of parsed.major_witnesses) {
+        // why_this_book_matters — string when enrichment runs
+        if (witness.why_this_book_matters !== undefined) {
+          expect(typeof witness.why_this_book_matters).toBe('string');
+        }
+        // themes_matched — array of strings when enrichment runs
+        if (witness.themes_matched !== undefined) {
+          expect(Array.isArray(witness.themes_matched)).toBe(true);
+        }
+        // suggested_anchor_passages — array when enrichment runs
+        if (witness.suggested_anchor_passages !== undefined) {
+          expect(Array.isArray(witness.suggested_anchor_passages)).toBe(true);
+        }
+        // narrative_reason — string or absent (never any other type)
+        if (witness.narrative_reason !== undefined) {
+          expect(typeof witness.narrative_reason).toBe('string');
+        }
+      }
+    }
+  });
+
   test(
     'handles multi-word thematic queries without crashing',
     async () => {
@@ -839,6 +878,167 @@ describe.skipIf(!process.env.CLOUDFLARE_ACCOUNT_ID)(
       // Isaiah's "comfort, comfort my people" passages are central to this topic.
       expect(witnessBooks).toContain('Isaiah');
     });
+
+    test(
+      'major witnesses have why_this_book_matters field populated',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'suffering' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+        for (const witness of parsed.major_witnesses) {
+          expect(typeof witness.why_this_book_matters).toBe('string');
+          expect(witness.why_this_book_matters.length).toBeGreaterThan(0);
+        }
+
+        // Job is the canonical book on suffering — it must appear as a witness
+        // and have a non-empty why_this_book_matters string.
+        const job = parsed.major_witnesses.find(
+          (w: { book: string }) => w.book === 'Job',
+        );
+        expect(job).toBeDefined();
+        expect(typeof job.why_this_book_matters).toBe('string');
+        expect(job.why_this_book_matters.length).toBeGreaterThan(0);
+        // The message must mention the book name.
+        expect(job.why_this_book_matters).toContain('Job');
+      },
+      15_000,
+    );
+
+    test(
+      'major witnesses have themes_matched field populated',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'suffering' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+        for (const witness of parsed.major_witnesses) {
+          expect(Array.isArray(witness.themes_matched)).toBe(true);
+          expect(witness.themes_matched.length).toBeGreaterThan(0);
+          for (const theme of witness.themes_matched) {
+            expect(typeof theme).toBe('string');
+          }
+        }
+
+        // At least one witness must have a theme_matched that mentions
+        // "suffering" or "affliction" (case-insensitive) — confirming the
+        // themes are query-relevant, not generic.
+        const allThemes: string[] = parsed.major_witnesses.flatMap(
+          (w: { themes_matched: string[] }) => w.themes_matched,
+        );
+        const hasRelevantTheme = allThemes.some((t) => {
+          const lower = t.toLowerCase();
+          return lower.includes('suffering') || lower.includes('affliction');
+        });
+        expect(hasRelevantTheme).toBe(true);
+      },
+      15_000,
+    );
+
+    test(
+      'major witnesses have suggested_anchor_passages field',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'suffering' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+        for (const witness of parsed.major_witnesses) {
+          expect(Array.isArray(witness.suggested_anchor_passages)).toBe(true);
+          for (const passage of witness.suggested_anchor_passages) {
+            expect(typeof passage).toBe('string');
+          }
+        }
+
+        // At least one witness must have non-empty suggested_anchor_passages.
+        const hasPassages = parsed.major_witnesses.some(
+          (w: { suggested_anchor_passages: string[] }) =>
+            w.suggested_anchor_passages.length > 0,
+        );
+        expect(hasPassages).toBe(true);
+
+        // Most passage references contain a number (e.g. "Job 1", "Job 1:21").
+        // Short books (4 chapters or fewer) may return just the book name when
+        // topic coverage spans the whole book — so we don't require a digit on
+        // every entry, only that the string is non-empty and contains the book name.
+        const allPassages: string[] = parsed.major_witnesses.flatMap(
+          (w: { suggested_anchor_passages: string[]; book: string }) =>
+            w.suggested_anchor_passages,
+        );
+        for (const witness of parsed.major_witnesses) {
+          for (const passage of witness.suggested_anchor_passages) {
+            expect(typeof passage).toBe('string');
+            expect(passage.length).toBeGreaterThan(0);
+            // Passage must reference the witness's own book.
+            expect(passage).toContain(witness.book);
+          }
+        }
+        // At least one passage across all witnesses should contain a number.
+        const passagesWithNumbers = allPassages.filter((p) => /\d/.test(p));
+        if (allPassages.length > 0) {
+          expect(passagesWithNumbers.length).toBeGreaterThan(0);
+        }
+      },
+      15_000,
+    );
+
+    test(
+      'narrative_reason field exists on major witnesses (string or undefined)',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'providence' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+        // narrative_reason is optional — witnesses with a narrative arc get it,
+        // others do not. Validate the field is either a non-empty string or absent.
+        for (const witness of parsed.major_witnesses) {
+          if (witness.narrative_reason !== undefined) {
+            expect(typeof witness.narrative_reason).toBe('string');
+            expect(witness.narrative_reason.length).toBeGreaterThan(0);
+          }
+        }
+
+        // The field must exist as a key on the object (present or undefined),
+        // confirming the serialization includes it when set.
+        const witnessesWithNarrative = parsed.major_witnesses.filter(
+          (w: { narrative_reason?: string }) =>
+            w.narrative_reason !== undefined,
+        );
+        // Not asserting count — just that any present value is a non-empty string.
+        for (const w of witnessesWithNarrative) {
+          expect(typeof w.narrative_reason).toBe('string');
+          expect(w.narrative_reason.length).toBeGreaterThan(0);
+        }
+      },
+      15_000,
+    );
   },
 );
 

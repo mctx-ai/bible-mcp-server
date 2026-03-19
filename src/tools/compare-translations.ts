@@ -130,7 +130,8 @@ compareTranslations.annotations = {
 };
 
 compareTranslations.description =
-  'Show the same Bible passage side-by-side across all 5 translations (KJV, WEB, ASV, YLT, DBY). Use when you want to see how different translators rendered a specific verse or passage — useful for spotting meaningful differences in word choice.';
+  'Show a known Bible passage side-by-side across all 5 translations (KJV, WEB, ASV, YLT, DBY). Use when the relevant verse or passage has already been identified and the goal is to compare wording, nuance, or translation choices across renderings. ' +
+  'This helps interpret a passage; it does not discover the Bible\'s major teaching on a topic.';
 
 compareTranslations.input = {
   book: T.string({
