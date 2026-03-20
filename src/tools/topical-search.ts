@@ -272,9 +272,15 @@ const BOOK_GENRE: Record<string, string> = {
 // Exact match → 1.0; topic name starts with query → 0.8; query is a word in
 // topic name → 0.6; topic name contains query → 0.4; partial substring → 0.2.
 // This gives a simple but meaningful ordering within the Nave's-only pool.
+//
+// Punctuation (apostrophes, hyphens, etc.) is stripped before word-boundary
+// checks so possessive topic names like "NOAH'S ARK" score 0.6 (word match)
+// rather than 0.4 (substring match) for a "Noah" query.
 function naveTopicRelevance(topicName: string, query: string): number {
-  const t = topicName.toLowerCase();
-  const q = query.toLowerCase();
+  // Strip punctuation before comparison to handle possessive names (e.g. "NOAH'S ARK").
+  const stripPunct = (s: string) => s.replace(/[^a-z0-9\s]/g, '');
+  const t = stripPunct(topicName.toLowerCase());
+  const q = stripPunct(query.toLowerCase());
   if (t === q) return 1.0;
   if (t.startsWith(q)) return 0.8;
   const words = t.split(/\s+/);
@@ -316,7 +322,6 @@ async function searchSemanticTopicsAndBooks(
     }
   }
 
-  console.error(`[DEBUG] vectorize topic matches: ${topics.length} topics, ${books.length} books out of ${matches.length} total`);
   return { topics, books };
 }
 
@@ -606,8 +611,11 @@ interface NarrativeContext {
 
 // Well-known biblical proper nouns used to anchor narrative detection via regex.
 // These are figures/stories that have specific, bounded narratives in one primary book.
+// Note: 'Ark' is intentionally excluded — 'Noah' already anchors Noah queries,
+// and standalone 'Ark' can falsely trigger narrative mode on thematic queries
+// like 'covenant and ark' (which should match both narratives broadly).
 const BIBLICAL_PROPER_NOUN_PATTERN =
-  /\b(Noah|Ark|Abraham|Isaac|Jacob|Joseph|Moses|Burning Bush|Red Sea|Exodus|Joshua|Rahab|Caleb|Samson|Gideon|Deborah|Ruth|Samuel|David|Goliath|Solomon|Elijah|Elisha|Jonah|Esther|Daniel|Shadrach|Meshach|Abednego|Nebuchadnezzar|Ezra|Nehemiah|Job|Mary|Joseph of Nazareth|Nativity|Baptism of Jesus|Transfiguration|Lazarus|Zacchaeus|Prodigal Son|Good Samaritan|Feeding of the Five Thousand|Triumphal Entry|Last Supper|Gethsemane|Crucifixion|Resurrection|Pentecost|Paul|Saul|Stephen|Peter|Cornelius|Ananias|Sapphira)\b/i;
+  /\b(Noah|Abraham|Isaac|Jacob|Joseph|Moses|Burning Bush|Red Sea|Exodus|Joshua|Rahab|Caleb|Samson|Gideon|Deborah|Ruth|Samuel|David|Goliath|Solomon|Elijah|Elisha|Jonah|Esther|Daniel|Shadrach|Meshach|Abednego|Nebuchadnezzar|Ezra|Nehemiah|Job|Mary|Joseph of Nazareth|Nativity|Baptism of Jesus|Transfiguration|Lazarus|Zacchaeus|Prodigal Son|Good Samaritan|Feeding of the Five Thousand|Triumphal Entry|Last Supper|Gethsemane|Crucifixion|Resurrection|Pentecost|Paul|Saul|Stephen|Peter|Cornelius|Ananias|Sapphira)\b/i;
 
 // Detects whether a query names a specific biblical narrative, figure, or story.
 // Two complementary signals:
@@ -616,51 +624,19 @@ const BIBLICAL_PROPER_NOUN_PATTERN =
 // Returns a NarrativeContext when both or either signal fires clearly, else undefined.
 function detectQueryNarrative(
   query: string,
-  likeTopics: Array<{ id: number; name: string }>,
+  _likeTopics: Array<{ id: number; name: string }>,
 ): NarrativeContext | undefined {
   // Signal (b): regex match on the raw query string.
   const regexMatch = BIBLICAL_PROPER_NOUN_PATTERN.exec(query);
 
-  // Signal (a): LIKE topics contain short proper-noun topics.
-  // A short proper-noun topic = 1-3 words where the first word is capitalized
-  // in the database (stored uppercase in Nave's, e.g. "NOAH", "JOSEPH").
-  // We check the topic_name for a single short entry that looks like a figure name.
-  const shortProperTopics = likeTopics.filter((t) => {
-    const words = t.name.trim().split(/\s+/);
-    // Must be 1-3 words and contain at least one significant proper noun word
-    // (not just a common word like "THE", "OF", "AND").
-    if (words.length < 1 || words.length > 3) return false;
-    // Nave's stores topic names in UPPERCASE. A proper-noun topic will be
-    // a name like "NOAH", "JOSEPH", "MOSES", "DAVID AND GOLIATH", etc.
-    // Filter out generic theological terms that are short but not figure names.
-    const genericTerms = new Set([
-      'GOD', 'LORD', 'CHRIST', 'JESUS', 'HOLY SPIRIT', 'SPIRIT', 'FAITH',
-      'LAW', 'SIN', 'LOVE', 'GRACE', 'HOPE', 'PRAYER', 'MERCY', 'JOY',
-      'PEACE', 'TRUTH', 'LIFE', 'DEATH', 'FIRE', 'WATER', 'BREAD', 'LIGHT',
-      'DARKNESS', 'HEART', 'SOUL', 'MIND', 'BODY', 'BLOOD', 'FLESH', 'WORD',
-      'WORKS', 'KING', 'PRIEST', 'PROPHET', 'MAN', 'WOMAN', 'CHILD', 'SON',
-      'FATHER', 'MOTHER', 'ISRAEL', 'CHURCH', 'HEAVEN', 'EARTH', 'SEA',
-      // Theological abstracts that are 1-3 word topics but not figure names.
-      'FAITHFULNESS', 'GRACE OF GOD', 'LOVE OF GOD', 'JUSTICE', 'JUDGMENT',
-      'SALVATION', 'REPENTANCE', 'FORGIVENESS', 'HOLINESS', 'SANCTIFICATION',
-      'RIGHTEOUSNESS', 'ATONEMENT', 'REDEMPTION', 'GLORIFICATION', 'ELECTION',
-      'RESURRECTION', 'BAPTISM', 'COVENANT', 'CREATION', 'SUFFERING',
-      'AFFLICTIONS', 'ADVERSITY', 'PATIENCE', 'ENDURANCE', 'COMFORT',
-      'WORSHIP', 'PRAISE', 'THANKSGIVING', 'HUMILITY', 'OBEDIENCE',
-      'TEMPTATION', 'WISDOM', 'BLESSING', 'CALLING', 'HEALING',
-      'FIGHT OF FAITH', 'UNFAITHFULNESS', 'ETERNAL LIFE', 'KINGDOM OF GOD',
-      'HOLY SPIRIT', 'DIVINE', 'SOVEREIGNTY', 'PROVIDENCE', 'OMNIPOTENCE',
-      'COMPASSION', 'ANGER', 'WRATH', 'DISCIPLINE', 'GUIDANCE', 'TRUST',
-      'ANXIETY', 'FEAR', 'GRIEF', 'LAMENT', 'DOUBT', 'COURAGE', 'STRENGTH',
-    ]);
-    const joined = words.join(' ');
-    return !genericTerms.has(joined);
-  });
+  // Signal (a) is retained conceptually but not computed — the filter result
+  // was never read since narrative mode requires signal (b) to fire.
+  // Signal (a) alone is too prone to false positives from short theological
+  // topic names in Nave's (e.g. FAITHFULNESS, GRACE OF GOD).
 
-  // Determine the figure label from signal (b) if available, then optionally
-  // corroborate with signal (a). Narrative mode requires signal (b) (the raw
-  // query regex) to fire; signal (a) alone is too prone to false positives from
-  // short theological topic names in Nave's (e.g. FAITHFULNESS, GRACE OF GOD).
+  // Determine the figure label from signal (b) if available.
+  // Narrative mode requires signal (b) (the raw query regex) to fire;
+  // signal (a) alone does NOT trigger narrative mode.
   let narrativeFigure: string | undefined;
 
   if (regexMatch) {
@@ -778,12 +754,14 @@ async function fetchRepresentativeVerse(
   >,
   semanticVerseMap: Map<string, VerseRow>,
   narrativeContext?: NarrativeContext,
+  seedChapterRange?: { minChapter: number; maxChapter: number },
 ): Promise<{ text: string; citation: Citation }> {
   // ── Narrative mode: primary narrative book ──────────────────────────────────
   // When the query names a specific narrative and this is the primary narrative
   // book, prefer a verse from within the densest chapter cluster of the story
-  // unit (min_chapter–max_chapter from aggregation data) instead of an
-  // arbitrary semantic hit that might come from an unrelated section of the book.
+  // unit. When a seed-only chapter range is available, use it instead of the
+  // all-topic aggregation range — this constrains to e.g. Genesis 6-9 for Noah
+  // rather than the full book span (Genesis 1-50).
   const isNarrativePrimaryBook =
     narrativeContext?.narrativeMode === true &&
     narrativeContext.primaryBookId === candidate.book_id;
@@ -795,7 +773,12 @@ async function fetchRepresentativeVerse(
       : `AND t.abbreviation = 'KJV'`;
     const translationParams: unknown[] = kjvTranslation ? [kjvTranslation.id] : [];
 
-    // Find the densest chapter within the narrative span (min_chapter–max_chapter).
+    // Use seed-only chapter range when available (tighter, story-specific span),
+    // otherwise fall back to the all-topic aggregation range from the candidate.
+    const chapterMin = seedChapterRange?.minChapter ?? candidate.min_chapter;
+    const chapterMax = seedChapterRange?.maxChapter ?? candidate.max_chapter;
+
+    // Find the densest chapter within the narrative span.
     const topicFilter =
       matchedTopicIds.length > 0
         ? `AND ntv.topic_id IN (${matchedTopicIds.map(() => '?').join(', ')})`
@@ -814,7 +797,7 @@ async function fetchRepresentativeVerse(
        GROUP BY ntv.chapter
        ORDER BY topic_hits DESC
        LIMIT 1`,
-      [candidate.book_id, candidate.min_chapter, candidate.max_chapter, ...topicParams],
+      [candidate.book_id, chapterMin, chapterMax, ...topicParams],
     );
 
     const narrativeDenseChapter =
@@ -1353,6 +1336,11 @@ function toThemeLabel(topicName: string): string {
 // Topics below this threshold are considered too loosely related to the query
 // to surface as user-facing theme labels.
 const THEMES_MATCHED_SALIENCE_THRESHOLD = 0.6;
+// Stricter salience threshold applied to co-occurring (non-seed) topics.
+// Seed topics are the direct query matches; co-occurring topics are discovered
+// via topic expansion. The higher threshold prevents noisy labels like
+// "the church" from appearing on unrelated queries (e.g. faithfulness).
+const THEMES_MATCHED_SALIENCE_THRESHOLD_COOCCURRING = 0.8;
 // Maximum number of theme labels to include in themes_matched.
 const THEMES_MATCHED_MAX = 5;
 
@@ -1361,11 +1349,15 @@ const THEMES_MATCHED_MAX = 5;
 // (the query-matched topic set), with salience >= 0.6 for this book, capped
 // at top 5 by salience. Internal scoring uses original topic names; output
 // labels are user-facing.
+// seedTopicIdSet distinguishes direct query matches (seed) from co-occurring
+// expansions. Seed topics use the standard 0.6 threshold; co-occurring topics
+// use a stricter 0.8 threshold to avoid noisy labels.
 function buildThemesMatched(
   candidate: WitnessCandidate,
   expandedTopics: Array<{ id: number; name: string }>,
   salienceMap: Map<string, number>,
   salienceTopicIds: number[],
+  seedTopicIdSet?: Set<number>,
 ): string[] {
   const expandedNameSet = new Set(expandedTopics.map((t) => t.name));
 
@@ -1386,11 +1378,23 @@ function buildThemesMatched(
     return salienceMap.get(`${candidate.book_id}:${topicId}`) ?? 0;
   };
 
+  // Returns the effective salience threshold for a topic name.
+  // Co-occurring (non-seed) topics require a higher salience to qualify
+  // to prevent noisy labels (e.g. "the church" on faithfulness queries).
+  const getThreshold = (name: string): number => {
+    if (!seedTopicIdSet) return THEMES_MATCHED_SALIENCE_THRESHOLD;
+    const topicId = topicIdByName.get(name);
+    if (!topicId) return THEMES_MATCHED_SALIENCE_THRESHOLD;
+    return seedTopicIdSet.has(topicId)
+      ? THEMES_MATCHED_SALIENCE_THRESHOLD
+      : THEMES_MATCHED_SALIENCE_THRESHOLD_COOCCURRING;
+  };
+
   if (matched.length > 0) {
     // Filter to topics whose salience for this book exceeds the threshold,
     // sort by salience descending, and cap at THEMES_MATCHED_MAX.
     const salienceFiltered = matched.filter(
-      (name) => getSalience(name) >= THEMES_MATCHED_SALIENCE_THRESHOLD,
+      (name) => getSalience(name) >= getThreshold(name),
     );
 
     if (salienceFiltered.length > 0) {
@@ -1398,8 +1402,10 @@ function buildThemesMatched(
       return salienceFiltered.slice(0, THEMES_MATCHED_MAX).map(toThemeLabel);
     }
 
-    // If no topics pass the salience threshold, fall back to top 5 by salience
-    // (without threshold) to avoid returning an empty list.
+    // Salience threshold fallback: when no topics pass the 0.8 threshold for this book,
+    // fall back to the top topics by raw salience score (no threshold). This ensures
+    // the themes_matched list is never empty for a book that does have matched topics —
+    // the threshold is a quality filter, not a hard gate on inclusion.
     matched.sort((a, b) => getSalience(b) - getSalience(a));
     return matched.slice(0, THEMES_MATCHED_MAX).map(toThemeLabel);
   }
@@ -1834,6 +1840,17 @@ function buildQueryAlignmentNote(
   );
 }
 
+// ─── Polysemous narrative topic names ────────────────────────────────────────
+
+// Topics whose Nave's coverage spans multiple unrelated narratives or contexts.
+// Excluded from the seed-only aggregation in narrative mode to prevent false
+// seed-verse counts in books that reference the topic in a different story context.
+// Example: ARK covers both Noah's ark (Genesis) and the Ark of the Covenant
+// (Exodus/Numbers); including it inflates seed counts for Exodus on a Noah query.
+const POLYSEMOUS_NARRATIVE_TOPICS = new Set([
+  'ARK', 'TEMPLE', 'TABERNACLE', 'ISRAEL', 'CHURCH',
+]);
+
 // ─── Major witness builder ────────────────────────────────────────────────────
 
 async function buildMajorWitnesses(
@@ -1854,6 +1871,7 @@ async function buildMajorWitnesses(
   semanticVerseMap: Map<string, VerseRow>,
   queryTopic: string,
   narrativeContext?: NarrativeContext,
+  seedTopicIdSet?: Set<number>,
 ): Promise<MajorWitness[]> {
   const topicIds = expandedTopics.map((t) => t.id);
 
@@ -1865,6 +1883,109 @@ async function buildMajorWitnesses(
 
   const candidates = await aggregateWitnesses(topicIds);
 
+  // In narrative mode, run a second aggregation restricted to figure-specific seed topics.
+  // This gives per-book verse counts from topics directly about the story figure
+  // (e.g. NOAH, FLOOD, ANTEDILUVIANS for "Noah and the ark") without polysemous
+  // topics like ARK (which covers the Ark of the Covenant in Exodus/Numbers) or
+  // co-occurring expansions. Used to:
+  //   (a) determine the primary narrative book (highest seed verse count)
+  //   (b) filter out non-primary witnesses that have no direct figure-topic verses
+  //   (c) constrain the primary book's anchor chapter range to the seed-dense span
+  const isNarrativeModeForSeed = narrativeContext?.narrativeMode === true;
+  const seedVerseCountByBook = new Map<number, number>();
+  const seedCandidates: WitnessCandidate[] = [];
+  if (isNarrativeModeForSeed && seedTopicIdSet && seedTopicIdSet.size > 0) {
+    // Filter 1: exclude polysemous topics that span multiple unrelated narratives.
+    const afterPolysemousFilter = Array.from(seedTopicIdSet).filter((tid) => {
+      const topic = expandedTopics.find((t) => t.id === tid);
+      if (!topic) return false;
+      return !POLYSEMOUS_NARRATIVE_TOPICS.has(topic.name.toUpperCase());
+    });
+
+    // Filter 2: when narrativeFigure is known, further restrict to topics whose
+    // names contain the figure name. This prevents broad topics like FLOOD from
+    // contributing seed-verse counts for books that use the same topic in a
+    // different story context (e.g. Numbers flood/water references). Topics that
+    // include the figure name (e.g. NOAH, NOAH'S ARK) will have relevance >= 0.4
+    // via naveTopicRelevance; unrelated topics like FLOOD or COVENANT will not.
+    // Fall back to afterPolysemousFilter if no topics pass the figure filter.
+    const narrativeFigure = narrativeContext?.narrativeFigure;
+    let filteredSeedIds = afterPolysemousFilter;
+    if (narrativeFigure) {
+      const figureFiltered = afterPolysemousFilter.filter((tid) => {
+        const topic = expandedTopics.find((t) => t.id === tid);
+        if (!topic) return false;
+        // Require relevance >= 0.6 so the figure name is a complete word
+        // in the topic name (exact word match, starts-with, or exact).
+        // This rejects substring-only matches like MANOAH, JANOAH, ZANOAH
+        // for a "Noah" figure query — those topic names contain "noah" as
+        // a substring but are unrelated persons or places.
+        return naveTopicRelevance(topic.name, narrativeFigure) >= 0.6;
+      });
+      if (figureFiltered.length > 0) {
+        filteredSeedIds = figureFiltered;
+      }
+    }
+
+    const seedIdsToUse = filteredSeedIds.length > 0 ? filteredSeedIds : Array.from(seedTopicIdSet);
+
+    const seedAgg = await aggregateWitnesses(seedIdsToUse);
+    seedCandidates.push(...seedAgg);
+
+    // Guard: if seed aggregation returned no candidates in narrative mode, log a
+    // production-visible error so the failure is traceable. This can happen when
+    // the seed topic IDs don't match any verses in D1 (e.g. a new topic added after
+    // ETL) or when all seeds were filtered out as polysemous.
+    if (seedCandidates.length === 0) {
+      console.error(
+        `[topical_search] narrative mode: seedCandidates is empty for query="${queryTopic}", ` +
+        `seedIdsToUse=[${seedIdsToUse.join(',')}]`,
+      );
+    }
+
+    // Determine the primary seed candidate (highest verse count) and its chapter range.
+    // Use this to validate non-primary OT books: if a non-primary OT book's seed verses
+    // are in a completely different chapter range from the primary narrative span, it's
+    // a same-name disambiguation (e.g. Numbers 26–36 for "Noah daughter of Zelophehad"
+    // when the query is about Noah the patriarch in Genesis 5–9). NT books are exempt
+    // from this check since they legitimately cross-reference OT narratives in their own
+    // chapter structure (e.g. Heb 11:7, 1 Pet 3:20 referencing Noah).
+    const primarySeedBookId = seedCandidates.length > 0 ? seedCandidates[0].book_id : undefined;
+    const primarySeedChapterMin = seedCandidates.length > 0 ? seedCandidates[0].min_chapter : undefined;
+    const primarySeedChapterMax = seedCandidates.length > 0 ? seedCandidates[0].max_chapter : undefined;
+    // "Narrow" narrative: the primary story spans fewer than 15 chapters.
+    // This threshold covers self-contained story units (e.g. Genesis 6-9 for Noah,
+    // ~4 chapters) while excluding book-wide narratives (e.g. Moses across Exodus,
+    // ~40 chapters). Only narrow narratives trigger the chapter-range disambiguation
+    // check for secondary OT books — broad narratives may legitimately recur across
+    // many chapters in other books, so the overlap check would reject valid witnesses.
+    const primaryNarrativeIsNarrow =
+      primarySeedChapterMin !== undefined &&
+      primarySeedChapterMax !== undefined &&
+      primarySeedChapterMax - primarySeedChapterMin < 15;
+
+    for (const sc of seedCandidates) {
+      if (
+        primaryNarrativeIsNarrow &&
+        sc.book_id !== primarySeedBookId &&
+        sc.testament === 'OT'
+      ) {
+        // Check chapter range overlap with primary narrative span.
+        // No overlap means this OT book's seed verses are about a different
+        // person or event (disambiguation case).
+        const overlaps =
+          sc.min_chapter <= primarySeedChapterMax! &&
+          sc.max_chapter >= primarySeedChapterMin!;
+        if (!overlaps) {
+          // Exclude from seed counts — this OT book references the topic in
+          // a different context (different story, same topic name).
+          continue;
+        }
+      }
+      seedVerseCountByBook.set(sc.book_id, sc.verse_count);
+    }
+  }
+
   // Count semantic verse hits per book — direct embedding-based relevance signal.
   const semanticHitsPerBook = new Map<number, number>();
   for (const coord of semanticCoords.values()) {
@@ -1873,12 +1994,6 @@ async function buildMajorWitnesses(
       (semanticHitsPerBook.get(coord.book_id) ?? 0) + 1,
     );
   }
-
-  // DEBUG: log candidate details
-  console.error(`[DEBUG] semanticHitsPerBook: ${Array.from(semanticHitsPerBook.entries()).map(([k, v]) => `${k}:${v}`).join(', ')}`);
-  console.error(`[DEBUG] expandedTopics count: ${expandedTopics.length}, topicNames: ${expandedTopics.slice(0, 15).map(t => t.name).join(', ')}`);
-  console.error(`[DEBUG] candidates (${candidates.length} total): ${candidates.map(c => `${c.book_name}:vc=${c.verse_count}`).join(' | ')}`);
-  console.error(`[DEBUG] Job in candidates: ${candidates.find(c => c.book_name === 'Job') ? 'YES' : 'NO'}`);
 
   // Fetch salience using the broad topic set (including co-occurring topics) and
   // actual candidate book IDs. The broad set ensures we capture salience signals
@@ -1893,21 +2008,27 @@ async function buildMajorWitnesses(
   // Filter to qualified witnesses only.
   // In narrative mode, non-primary books must clear higher thresholds to prevent
   // loosely related books (e.g. Exodus, Numbers for a Noah query) from qualifying.
-  // The primary narrative book is the top verse_count candidate (candidates is
-  // sorted descending by verse_count from aggregateWitnesses).
+  // The primary narrative book is the top seed-verse-count candidate in narrative mode
+  // (seedCandidates[0]) — NOT the all-topic candidates[0], which is inflated by
+  // co-occurring topics (TABERNACLE, ISRAEL) that drag Exodus to the top for Noah.
   const isNarrativeModeForFilter = narrativeContext?.narrativeMode === true;
-  const narrativePrimaryBookIdForFilter =
-    isNarrativeModeForFilter && candidates.length > 0
-      ? candidates[0].book_id
-      : undefined;
+  const narrativePrimaryBookIdForFilter = isNarrativeModeForFilter
+    ? (seedCandidates.length > 0 ? seedCandidates[0].book_id : candidates[0]?.book_id)
+    : undefined;
 
   const qualified = candidates.filter((c) => {
     if (
       isNarrativeModeForFilter &&
       c.book_id !== narrativePrimaryBookIdForFilter
     ) {
-      // Non-primary book in narrative mode: apply stricter thresholds.
+      // Non-primary book in narrative mode: apply stricter thresholds AND
+      // require at least one direct seed-topic verse. This eliminates books
+      // like Exodus and Numbers for a Noah query (0 NOAH/FLOOD/ARK verses)
+      // while preserving Hebrews (Heb 11:7 in NOAH) and 1 Peter (1 Pet 3:20
+      // in FLOOD) which have legitimate direct references.
+      const seedHits = seedVerseCountByBook.get(c.book_id) ?? 0;
       return (
+        seedHits >= 1 &&
         c.verse_count >= MAJOR_WITNESS_MIN_VERSES_NARRATIVE_NON_PRIMARY &&
         c.chapter_count >= MAJOR_WITNESS_MIN_CHAPTERS_NARRATIVE_NON_PRIMARY
       );
@@ -1997,8 +2118,6 @@ async function buildMajorWitnesses(
     if (b.witnessScore !== a.witnessScore) return b.witnessScore - a.witnessScore;
     return b.queryAlignmentScore - a.queryAlignmentScore;
   });
-  // DEBUG: log scored results
-  console.error(`[DEBUG] scored (top 15): ${scored.slice(0, 15).map(s => `${s.candidate.book_name}: ws=${s.witnessScore.toFixed(2)}, qa=${s.queryAlignmentScore.toFixed(3)}, vc=${s.candidate.verse_count}, cc=${s.candidate.chapter_count}, sem=${(bookSemanticScoreMap.get(s.candidate.book_id) ?? 0).toFixed(3)}, sal=${(() => { let tot = 0; for (const tid of salienceTopicIds) { tot += salienceMap.get(s.candidate.book_id + ':' + tid) ?? 0; } return tot.toFixed(3); })()}, svh=${semanticHitsPerBook.get(s.candidate.book_id) ?? 0}`).join(' | ')}`);
   // Apply both a hard cap and a relative score cutoff so that:
   // - Queries with a clear top-N (large score gaps) return fewer witnesses
   // - Queries with many similarly-scored books (like "end times prophecy")
@@ -2014,15 +2133,36 @@ async function buildMajorWitnesses(
   const activeMaxWitnesses = isNarrativeMode ? MAX_MAJOR_WITNESSES_NARRATIVE : MAX_MAJOR_WITNESSES;
   const cutoff = topScore * activeCutoff;
 
-  // For narrative queries, identify the primary book (highest verse_count among candidates).
-  // The candidates are already sorted by verse_count descending, so the first qualified
-  // candidate is the primary narrative book.
-  if (isNarrativeMode && narrativeContext && candidates.length > 0) {
-    // Use the top verse_count candidate as the primary book anchor.
-    narrativeContext.primaryBookId = candidates[0].book_id;
+  // For narrative queries, identify the primary book using seed-only aggregation.
+  // In narrative mode, seedCandidates (sorted by seed verse_count desc) gives the
+  // book with the most direct story-topic verses — e.g. Genesis for NOAH/FLOOD/ARK.
+  // The all-topic candidates[0] can be wrong because co-occurring topics (TABERNACLE,
+  // ISRAEL, FAITH) inflate Exodus/Numbers well above Genesis for a Noah query.
+  // Fall back to candidates[0] only if no seed candidates exist.
+  if (isNarrativeMode && narrativeContext) {
+    if (seedCandidates.length > 0) {
+      narrativeContext.primaryBookId = seedCandidates[0].book_id;
+    } else if (candidates.length > 0) {
+      narrativeContext.primaryBookId = candidates[0].book_id;
+    }
   }
 
   const primaryBookId = isNarrativeMode ? narrativeContext?.primaryBookId : undefined;
+
+  // For the primary narrative book, compute the seed-only chapter range.
+  // This is the min/max chapter from the seed-topic-only aggregation (e.g.
+  // Genesis 5–9 for Noah from NOAH/FLOOD/ARK topics) rather than the broader
+  // all-topic range (Genesis 1–50 with co-occurring topics like COVENANT).
+  // Used to constrain anchor passages and representative verse selection.
+  let primarySeedMin: number | undefined;
+  let primarySeedMax: number | undefined;
+  if (isNarrativeMode && primaryBookId !== undefined) {
+    const primarySeedCandidate = seedCandidates.find((sc) => sc.book_id === primaryBookId);
+    if (primarySeedCandidate) {
+      primarySeedMin = primarySeedCandidate.min_chapter;
+      primarySeedMax = primarySeedCandidate.max_chapter;
+    }
+  }
 
   // Build the candidate list: apply cap + cutoff, but always include the primary book.
   const cappedSlice = scored.slice(0, activeMaxWitnesses);
@@ -2054,21 +2194,35 @@ async function buildMajorWitnesses(
         .filter((t) => matchedTopics.includes(t.name))
         .map((t) => t.id);
 
+      // Pass seed chapter range for the primary narrative book so the
+      // representative verse is selected from within the story unit (e.g.
+      // Genesis 6-9 for Noah) rather than any topic-matched chapter in the book.
+      const seedChapterRangeForVerse =
+        isNarrativeMode &&
+        candidate.book_id === primaryBookId &&
+        primarySeedMin !== undefined &&
+        primarySeedMax !== undefined
+          ? { minChapter: primarySeedMin, maxChapter: primarySeedMax }
+          : undefined;
+
       const representativeVerse = await fetchRepresentativeVerse(
         candidate,
         matchedTopicIds,
         semanticCoords,
         semanticVerseMap,
         narrativeContext,
+        seedChapterRangeForVerse,
       );
 
       // Build enrichment fields from in-memory data (no additional D1 queries).
       // Compute themesMatched first so it can inform the narrative explanations.
+      // Pass seedTopicIdSet so co-occurring topics use the stricter 0.8 threshold.
       const themesMatched = buildThemesMatched(
         candidate,
         expandedTopics,
         salienceMap,
         salienceTopicIds,
+        seedTopicIdSet,
       );
 
       const whyThisBookMatters = buildWhyThisBookMatters(
@@ -2082,17 +2236,17 @@ async function buildMajorWitnesses(
       const totalBookChapters = BOOK_TOTAL_CHAPTERS[candidate.book_name] ?? candidate.chapter_count;
       const rawAnchorRows = anchorPassageData.get(candidate.book_id) ?? [];
       // In narrative mode, constrain the anchor data for the primary narrative
-      // book to only chapters within the story's span (min_chapter–max_chapter).
-      // Without this filter, clusterNarrative would operate over the full book
-      // (e.g. all 50 Genesis chapters for Noah) and pick arc representatives
-      // scattered across unrelated content. Filtering first collapses the anchor
-      // to the narrative block (Genesis 6-9 for Noah) before any clustering runs.
+      // book to only chapters within the story's span. Use the seed-only chapter
+      // range (primarySeedMin/Max) when available — this tightens the anchor to
+      // e.g. Genesis 6-9 for Noah rather than the all-topic range which could
+      // include Genesis 1-50 via co-occurring topics like COVENANT or SACRIFICE.
+      // Falls back to the all-topic candidate range if seed range is unavailable.
       const anchorRows =
         isNarrativeMode && candidate.book_id === primaryBookId
           ? rawAnchorRows.filter(
               (r) =>
-                r.chapter >= candidate.min_chapter &&
-                r.chapter <= candidate.max_chapter,
+                r.chapter >= (primarySeedMin ?? candidate.min_chapter) &&
+                r.chapter <= (primarySeedMax ?? candidate.max_chapter),
             )
           : rawAnchorRows;
       const candidateGenre = BOOK_GENRE[candidate.book_name];
@@ -2439,15 +2593,9 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
     likeTopicsPromise,
   ]);
 
-  console.error(`[DEBUG] semanticTopics: ${semanticTopics.map(t => `${t.name}(${t.id},s=${t.score.toFixed(3)})`).join(', ')}`);
-  console.error(`[DEBUG] likeTopics: ${likeTopics.map(t => `${t.name}(${t.id})`).join(', ')}`);
-
   // Detect whether the query names a specific biblical narrative or figure.
   // This is done after LIKE topics resolve so we can use them as a signal.
   const narrativeContext = detectQueryNarrative(topic, likeTopics);
-  if (narrativeContext) {
-    console.error(`[DEBUG] narrativeMode detected: figure="${narrativeContext.narrativeFigure}"`);
-  }
 
   const semanticVerseMap = await fetchVerseTexts(Array.from(semanticCoords.values()));
 
@@ -2468,7 +2616,6 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
   // to salience scoring.
   const seedTopicIds = expandedTopics.map((t) => t.id);
   const cooccurringTopics = await expandTopicsByCooccurrence(seedTopicIds);
-  console.error(`[DEBUG] cooccurringTopics: ${cooccurringTopics.map(t => `${t.name}(${t.id})`).join(', ')}`);
 
   // Fetch salience for co-occurring topics to identify which are topically
   // concentrated (high salience = canonical for a specific book) vs spread
@@ -2531,13 +2678,13 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
     }
   }
 
-  console.error(`[DEBUG] finalExpandedTopics: ${finalExpandedTopics.map(t => t.name).join(', ')}`);
-  console.error(`[DEBUG] promoted co-occurring: ${promoted}`);
-
   // Phase 3 (was Phase 2): Build major witnesses using semantic topics + book scores + salience.
+  // Build seedTopicIdSet from the pre-expansion seed topic IDs so buildMajorWitnesses
+  // can distinguish direct query matches (seed) from co-occurring expansions.
+  const seedTopicIdSet = new Set(seedTopicIds);
   const majorWitnesses =
     finalExpandedTopics.length > 0
-      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap, topic, narrativeContext ?? undefined)
+      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap, topic, narrativeContext ?? undefined, seedTopicIdSet)
       : [];
 
   // Phase 4: Existing merge + witness interleave + match reasons.
@@ -2749,7 +2896,9 @@ topicalSearch.description =
   'Works for single topics ("forgiveness", "prayer") and compound themes ("God\'s faithfulness during suffering", "hope in the face of death"). ' +
   'Prefer this over semantic_search when the answer should include major biblical witnesses across passages, narratives, books, or genres. ' +
   'Major witnesses include witness_strength (central/strong/supporting) and query_alignment_note to explain how the book\'s evidence connects to your query. ' +
-  'For deeper study: use cross_references to expand a verse found in the results, semantic_search for additional verse-level discovery, or word_study for original-language analysis of key terms.';
+  'For story/narrative queries (e.g., "Noah and the ark", "the Exodus", "David and Goliath"): topical_search identifies the primary narrative book and anchor verse range. ' +
+  'After getting results, pick a representative verse from the story unit (cross_references takes a single verse, not a range), then use cross_references on that anchor verse to find how other books reference the story, and use semantic_search for verse-level exploration within the story unit. ' +
+  'For deeper study: use cross_references to expand a verse found in the results, semantic_search for additional verse-level discovery, find_text for keyword-based follow-up searches, or word_study for original-language analysis of key terms.';
 
 topicalSearch.input = {
   topic: T.string({

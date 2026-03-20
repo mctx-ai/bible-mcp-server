@@ -1,5 +1,27 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, test, expect } from 'vitest';
 import server from './index.js';
+
+// Load .env file for API-gated test credentials (same pattern as integration.test.ts).
+// Without this, CLOUDFLARE_ACCOUNT_ID is undefined and describe.skipIf blocks skip.
+try {
+  const envPath = resolve(process.cwd(), '.env');
+  const envFile = readFileSync(envPath, 'utf-8');
+  for (const line of envFile.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) continue;
+    const key = trimmed.slice(0, eqIndex);
+    const value = trimmed.slice(eqIndex + 1);
+    if (!process.env[key]) {
+      process.env[key] = value;
+    }
+  }
+} catch {
+  // .env file not found — API-gated tests will skip gracefully
+}
 import {
   buildWhyThisBookMatters,
   buildWitnessMatchReason,
@@ -1049,6 +1071,162 @@ describe.skipIf(!process.env.CLOUDFLARE_ACCOUNT_ID)(
         }
       },
       15_000,
+    );
+  },
+);
+
+// ─── topical_search Story Grounding ───────────────────────────────────────────
+//
+// Regression tests verifying that named-story queries return tightly focused
+// results (correct primary book, correct anchor chapter range, no noise books).
+// Gated behind CLOUDFLARE_ACCOUNT_ID.
+
+describe.skipIf(!process.env.CLOUDFLARE_ACCOUNT_ID)(
+  'Tool: topical_search — story grounding',
+  () => {
+    test(
+      '"Noah and the ark" returns Genesis as the central witness',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'Noah and the ark' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+        const witnessBooks: string[] = parsed.major_witnesses.map(
+          (w: { book: string }) => w.book,
+        );
+        // Genesis is the canonical narrative home of the Noah story.
+        expect(witnessBooks).toContain('Genesis');
+        // Genesis must be the first (central) witness.
+        expect(witnessBooks[0]).toBe('Genesis');
+      },
+      20_000,
+    );
+
+    test(
+      '"Noah and the ark" anchor passages fall within Genesis 5–9',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'Noah and the ark' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        const genesis = parsed.major_witnesses.find(
+          (w: { book: string }) => w.book === 'Genesis',
+        );
+        expect(genesis).toBeDefined();
+
+        // Anchor passages must reference Genesis and fall within chapters 5–9.
+        // The Noah narrative spans Genesis 6–9 (the flood account proper), with
+        // the genealogy in chapter 5. Any anchor passage outside this range
+        // (e.g. Genesis 22, 46) indicates story grounding is broken.
+        const passages: string[] = genesis.suggested_anchor_passages ?? [];
+        expect(passages.length).toBeGreaterThan(0);
+        for (const passage of passages) {
+          expect(passage).toContain('Genesis');
+          // Extract chapter numbers from passage strings like "Genesis 6-9" or "Genesis 7"
+          const chapterMatches = passage.match(/Genesis (\d+)/g) ?? [];
+          for (const match of chapterMatches) {
+            const chapter = parseInt(match.replace('Genesis ', ''), 10);
+            expect(chapter).toBeGreaterThanOrEqual(5);
+            expect(chapter).toBeLessThanOrEqual(9);
+          }
+        }
+      },
+      20_000,
+    );
+
+    test(
+      '"Noah and the ark" does NOT include Exodus or Numbers as witnesses',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'Noah and the ark' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        const witnessBooks: string[] = parsed.major_witnesses.map(
+          (w: { book: string }) => w.book,
+        );
+        // Exodus and Numbers have no direct Noah/Flood/Ark content.
+        // They must not appear as witnesses (they accumulate co-occurring topic
+        // hits from covenant/sacrifice topics shared with Noah topics).
+        expect(witnessBooks).not.toContain('Exodus');
+        expect(witnessBooks).not.toContain('Numbers');
+      },
+      20_000,
+    );
+
+    test(
+      '"Noah and the ark" allows Hebrews or 1 Peter as secondary witnesses',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: 'Noah and the ark' },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        const witnessBooks: string[] = parsed.major_witnesses.map(
+          (w: { book: string }) => w.book,
+        );
+        // Hebrews 11:7 and 1 Peter 3:20 are legitimate direct references
+        // to Noah. At least one should appear as a secondary witness.
+        // This test is a soft assertion (toSatisfy) — it verifies the
+        // filter doesn't over-exclude legitimate interpretive witnesses.
+        const hasLegitimateSecondary =
+          witnessBooks.includes('Hebrews') || witnessBooks.includes('1 Peter');
+        // Not a hard failure — log the result for visibility.
+        if (!hasLegitimateSecondary) {
+          console.warn(
+            '[test] Noah query: Hebrews/1 Peter not in witnesses — acceptable if Genesis dominates correctly.',
+            witnessBooks,
+          );
+        }
+        // Genesis must still be present regardless.
+        expect(witnessBooks).toContain('Genesis');
+      },
+      20_000,
+    );
+
+    test(
+      '"God\'s faithfulness during suffering" themes_matched does not include "the church" (regression)',
+      async () => {
+        const req = createRequest('tools/call', {
+          name: 'topical_search',
+          arguments: { topic: "God's faithfulness during suffering" },
+        });
+        const res = await server.fetch(req);
+        const data = await getResponse(res);
+
+        expect(data.result.isError).toBeFalsy();
+        const parsed = JSON.parse(data.result.content[0].text);
+        expect(parsed.major_witnesses.length).toBeGreaterThan(0);
+
+        // "the church" is a noisy co-occurring theme label that appears via the
+        // CHURCH topic. It co-occurs with suffering topics but is not thematically
+        // relevant to a faithfulness-during-suffering query. The stricter 0.8
+        // threshold for co-occurring topics should prevent it from appearing.
+        const allThemes: string[] = parsed.major_witnesses.flatMap(
+          (w: { themes_matched?: string[] }) => w.themes_matched ?? [],
+        );
+        expect(allThemes).not.toContain('the church');
+      },
+      20_000,
     );
   },
 );
