@@ -71,7 +71,13 @@ const MAX_MAJOR_WITNESSES = 12;
 const MAX_MAJOR_WITNESSES_NARRATIVE = 5;
 // Witnesses scoring below this fraction of the top witness score are excluded,
 // even if fewer than MAX_MAJOR_WITNESSES have been emitted.
-const WITNESS_SCORE_CUTOFF = 0.55;
+// Raised from 0.55 to 0.60 to reduce noise from weakly related witnesses
+// on broad theological queries (e.g. Isaiah appearing for suffering queries
+// primarily due to high chapter coverage in prophetic genre rather than
+// direct topical relevance). The increase is intentionally moderate — raising
+// too high (e.g. 0.65) removes legitimate witnesses for queries like "end
+// times prophecy" where many books score similarly.
+const WITNESS_SCORE_CUTOFF = 0.60;
 // Narrative queries use a stricter cutoff — only genuinely related secondary
 // witnesses survive (e.g. Hebrews 11, 1 Peter 3 for Noah — not Exodus, Numbers).
 const WITNESS_SCORE_CUTOFF_NARRATIVE = 0.75;
@@ -778,7 +784,67 @@ async function fetchRepresentativeVerse(
     const chapterMin = seedChapterRange?.minChapter ?? candidate.min_chapter;
     const chapterMax = seedChapterRange?.maxChapter ?? candidate.max_chapter;
 
-    // Find the densest chapter within the narrative span.
+    // Tier 1 (narrative primary book): pick the verse with the highest topic
+    // co-occurrence count within the seed chapter range. This selects a
+    // thematically central verse (e.g. Genesis 7:7 or 8:1 for Noah) rather
+    // than defaulting to verse 1 of the densest chapter (e.g. Genesis 9:1).
+    if (matchedTopicIds.length > 0) {
+      const topicPlaceholders = matchedTopicIds.map(() => '?').join(', ');
+      const narrativeCooccurrenceResult = await d1.query(
+        `SELECT
+           ntv.chapter,
+           ntv.verse,
+           COUNT(DISTINCT ntv.topic_id) AS topic_count
+         FROM nave_topic_verses ntv
+         WHERE ntv.book_id = ?
+           AND ntv.chapter >= ?
+           AND ntv.chapter <= ?
+           AND ntv.topic_id IN (${topicPlaceholders})
+         GROUP BY ntv.chapter, ntv.verse
+         ORDER BY topic_count DESC, ntv.chapter ASC, ntv.verse ASC
+         LIMIT 1`,
+        [candidate.book_id, chapterMin, chapterMax, ...matchedTopicIds],
+      );
+
+      if (narrativeCooccurrenceResult.results.length > 0) {
+        const bestChapter = narrativeCooccurrenceResult.results[0]['chapter'] as number;
+        const bestVerse = narrativeCooccurrenceResult.results[0]['verse'] as number;
+
+        const cooccurrenceVerseResult = await d1.query(
+          `SELECT
+             v.book_id,
+             v.chapter,
+             v.verse,
+             b.name AS book_name,
+             t.abbreviation AS translation_abbrev,
+             v.text
+           FROM verses v
+           JOIN books b ON b.id = v.book_id
+           JOIN translations t ON t.id = v.translation_id
+           WHERE v.book_id = ?
+             AND v.chapter = ?
+             AND v.verse = ?
+             ${translationFilter}
+           LIMIT 1`,
+          [candidate.book_id, bestChapter, bestVerse, ...translationParams],
+        );
+
+        if (cooccurrenceVerseResult.results.length > 0) {
+          const r = cooccurrenceVerseResult.results[0] as unknown as VerseRow;
+          return {
+            text: r.text,
+            citation: {
+              book: r.book_name,
+              chapter: r.chapter,
+              verse: r.verse,
+              translation: r.translation_abbrev,
+            },
+          };
+        }
+      }
+    }
+
+    // Fallback: find the densest chapter within the narrative span and pick verse 1.
     const topicFilter =
       matchedTopicIds.length > 0
         ? `AND ntv.topic_id IN (${matchedTopicIds.map(() => '?').join(', ')})`
@@ -866,9 +932,14 @@ async function fetchRepresentativeVerse(
   }
 
   // First pass: find the highest-scoring Vectorize hit that is also topic-matched.
-  // Topic-matched verses receive a +0.05 bonus to their effective score so they
-  // are preferred more aggressively over semantically similar but unmapped verses.
-  const TOPIC_MATCH_BONUS = 0.05;
+  // Topic-matched verses receive a +0.15 bonus to their effective score so they
+  // are preferred meaningfully over semantically similar but topically unmapped
+  // verses. For broad theological queries (e.g. "God's faithfulness during
+  // suffering"), Vectorize scores between candidate verses may differ by only
+  // 0.05–0.10; a 0.15 bonus ensures the topic-grounded verse wins (e.g.
+  // Psalm 89:1 over Psalm 9:14) without fully overriding genuinely superior
+  // semantic matches (which typically differ by more than 0.15).
+  const TOPIC_MATCH_BONUS = 0.15;
   // Within 0.01 of the best effective score, prefer the lower chapter:verse for stability.
   const SCORE_TIE_BAND = 0.01;
 
@@ -1340,7 +1411,14 @@ const THEMES_MATCHED_SALIENCE_THRESHOLD = 0.6;
 // Seed topics are the direct query matches; co-occurring topics are discovered
 // via topic expansion. The higher threshold prevents noisy labels like
 // "the church" from appearing on unrelated queries (e.g. faithfulness).
-const THEMES_MATCHED_SALIENCE_THRESHOLD_COOCCURRING = 0.8;
+const THEMES_MATCHED_SALIENCE_THRESHOLD_COOCCURRING = 0.85;
+// Minimum semantic similarity score a co-occurring (non-seed) topic must have
+// to appear in themes_matched output. Topics matched only via LIKE expansion
+// are exempt (LIKE match is treated as fully relevant). Semantic topics that
+// scored below this threshold are considered tangentially related — e.g.
+// "the church" appearing for a suffering query because it co-occurs with
+// AFFLICTIONS in Nave's, not because it is semantically close to the query.
+const THEMES_MATCHED_SEMANTIC_SCORE_THRESHOLD_COOCCURRING = 0.75;
 // Maximum number of theme labels to include in themes_matched.
 const THEMES_MATCHED_MAX = 5;
 
@@ -1351,13 +1429,21 @@ const THEMES_MATCHED_MAX = 5;
 // labels are user-facing.
 // seedTopicIdSet distinguishes direct query matches (seed) from co-occurring
 // expansions. Seed topics use the standard 0.6 threshold; co-occurring topics
-// use a stricter 0.8 threshold to avoid noisy labels.
+// use a stricter 0.85 threshold to avoid noisy labels.
+// topicSemanticScoreById provides Vectorize similarity scores for topics that
+// were matched semantically (not via LIKE). Co-occurring topics that are not
+// LIKE-matched must also meet a minimum semantic score to appear — this filters
+// tangentially related topics like "the church" from a suffering query.
+// likeTopicIdSet identifies LIKE-matched topics, which are exempt from the
+// semantic score filter (LIKE is already keyword-grounded).
 function buildThemesMatched(
   candidate: WitnessCandidate,
   expandedTopics: Array<{ id: number; name: string }>,
   salienceMap: Map<string, number>,
   salienceTopicIds: number[],
   seedTopicIdSet?: Set<number>,
+  topicSemanticScoreById?: Map<number, number>,
+  likeTopicIdSet?: Set<number>,
 ): string[] {
   const expandedNameSet = new Set(expandedTopics.map((t) => t.name));
 
@@ -1390,11 +1476,30 @@ function buildThemesMatched(
       : THEMES_MATCHED_SALIENCE_THRESHOLD_COOCCURRING;
   };
 
+  // Returns true if a co-occurring (non-seed) topic passes the semantic
+  // relevance check. LIKE-matched topics are always considered relevant.
+  // Semantic-only topics must have a Vectorize similarity score meeting
+  // THEMES_MATCHED_SEMANTIC_SCORE_THRESHOLD_COOCCURRING. Seed topics are
+  // exempt — they are already primary query matches.
+  const passesSemanticCheck = (name: string): boolean => {
+    if (!seedTopicIdSet || !topicSemanticScoreById) return true;
+    const topicId = topicIdByName.get(name);
+    if (!topicId) return true;
+    // Seed topics are always accepted.
+    if (seedTopicIdSet.has(topicId)) return true;
+    // LIKE-matched topics are keyword-grounded — exempt from semantic filter.
+    if (likeTopicIdSet && likeTopicIdSet.has(topicId)) return true;
+    // Semantic-only co-occurring topic: require minimum similarity score.
+    const semScore = topicSemanticScoreById.get(topicId) ?? 0;
+    return semScore >= THEMES_MATCHED_SEMANTIC_SCORE_THRESHOLD_COOCCURRING;
+  };
+
   if (matched.length > 0) {
-    // Filter to topics whose salience for this book exceeds the threshold,
-    // sort by salience descending, and cap at THEMES_MATCHED_MAX.
+    // Filter to topics whose salience for this book exceeds the threshold
+    // AND that pass the semantic relevance check for co-occurring topics.
+    // Sort by salience descending, and cap at THEMES_MATCHED_MAX.
     const salienceFiltered = matched.filter(
-      (name) => getSalience(name) >= getThreshold(name),
+      (name) => getSalience(name) >= getThreshold(name) && passesSemanticCheck(name),
     );
 
     if (salienceFiltered.length > 0) {
@@ -1402,12 +1507,18 @@ function buildThemesMatched(
       return salienceFiltered.slice(0, THEMES_MATCHED_MAX).map(toThemeLabel);
     }
 
-    // Salience threshold fallback: when no topics pass the 0.8 threshold for this book,
-    // fall back to the top topics by raw salience score (no threshold). This ensures
-    // the themes_matched list is never empty for a book that does have matched topics —
-    // the threshold is a quality filter, not a hard gate on inclusion.
-    matched.sort((a, b) => getSalience(b) - getSalience(a));
-    return matched.slice(0, THEMES_MATCHED_MAX).map(toThemeLabel);
+    // Salience threshold fallback: when no topics pass the strict thresholds
+    // for this book, fall back to seed-only topics by raw salience score. This
+    // ensures the themes_matched list is never empty for a book that does have
+    // seed-matched topics — the thresholds are quality filters, not hard gates.
+    const seedOnly = matched.filter((name) => {
+      if (!seedTopicIdSet) return true;
+      const topicId = topicIdByName.get(name);
+      return topicId ? seedTopicIdSet.has(topicId) : true;
+    });
+    const fallbackPool = seedOnly.length > 0 ? seedOnly : matched;
+    fallbackPool.sort((a, b) => getSalience(b) - getSalience(a));
+    return fallbackPool.slice(0, THEMES_MATCHED_MAX).map(toThemeLabel);
   }
 
   // No query-matched topics found: return first 5 candidate topics as labels.
@@ -1562,6 +1673,19 @@ function clusterNarrative(
   totalBookChapters: number,
 ): string[] {
   if (rows.length === 0) return [];
+
+  // Small seed span: when rows span ≤6 chapters (already pre-filtered to the
+  // story unit for the primary narrative book), bypass arc-based thirds logic
+  // and return the full contiguous seed chapter range as a single passage.
+  // This prevents Genesis 6-9 from being fragmented — arc thirds of Genesis
+  // (50 chapters) would put chapters 6-9 entirely in the first arc, returning
+  // only the single densest chapter (e.g. chapter 9) rather than the full span.
+  const seedMinChapter = Math.min(...rows.map((r) => r.chapter));
+  const seedMaxChapter = Math.max(...rows.map((r) => r.chapter));
+  const seedSpan = seedMaxChapter - seedMinChapter + 1;
+  if (seedSpan <= 6) {
+    return [`${bookName} ${seedMinChapter}-${seedMaxChapter}`];
+  }
 
   // Divide the book into thirds: entry arc, crisis arc, resolution arc.
   const arcSize = Math.ceil(totalBookChapters / 3);
@@ -1872,6 +1996,8 @@ async function buildMajorWitnesses(
   queryTopic: string,
   narrativeContext?: NarrativeContext,
   seedTopicIdSet?: Set<number>,
+  topicSemanticScoreById?: Map<number, number>,
+  likeTopicIdSet?: Set<number>,
 ): Promise<MajorWitness[]> {
   const topicIds = expandedTopics.map((t) => t.id);
 
@@ -2216,13 +2342,18 @@ async function buildMajorWitnesses(
 
       // Build enrichment fields from in-memory data (no additional D1 queries).
       // Compute themesMatched first so it can inform the narrative explanations.
-      // Pass seedTopicIdSet so co-occurring topics use the stricter 0.8 threshold.
+      // Pass seedTopicIdSet so co-occurring topics use the stricter 0.85 threshold.
+      // Pass topicSemanticScoreById and likeTopicIdSet so co-occurring topics also
+      // require a minimum semantic similarity score to the query — filtering tangential
+      // themes like "the church" from suffering queries.
       const themesMatched = buildThemesMatched(
         candidate,
         expandedTopics,
         salienceMap,
         salienceTopicIds,
         seedTopicIdSet,
+        topicSemanticScoreById,
+        likeTopicIdSet,
       );
 
       const whyThisBookMatters = buildWhyThisBookMatters(
@@ -2684,7 +2815,7 @@ const topicalSearch: ToolHandler = async (args, _ask?) => {
   const seedTopicIdSet = new Set(seedTopicIds);
   const majorWitnesses =
     finalExpandedTopics.length > 0
-      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap, topic, narrativeContext ?? undefined, seedTopicIdSet)
+      ? await buildMajorWitnesses(finalExpandedTopics, salienceTopicIds, topicRelevanceWeight, semanticBooks, semanticCoords, semanticVerseMap, topic, narrativeContext ?? undefined, seedTopicIdSet, semanticScoreById, likeTopicIdSet)
       : [];
 
   // Phase 4: Existing merge + witness interleave + match reasons.
