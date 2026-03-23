@@ -360,9 +360,9 @@ async function ingestTranslation(translation: TranslationMeta): Promise<void> {
 async function main(): Promise<void> {
   const isResume = process.argv.includes('--resume');
 
-  console.log('Bible MCP Server — Embedding Ingestion');
+  console.log('Bible Study App — Embedding Ingestion');
   console.log(`Mode: ${isResume ? 'resume' : 'full re-index'}`);
-  console.log('========================================\n');
+  console.log('=======================================\n');
 
   const required = [
     'CLOUDFLARE_API_TOKEN',

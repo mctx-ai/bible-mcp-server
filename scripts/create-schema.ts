@@ -2,7 +2,7 @@
 /**
  * create-schema.ts
  *
- * Creates all D1 database tables, indexes, and constraints for the Bible MCP server.
+ * Creates all D1 database tables, indexes, and constraints for the Bible Study App.
  *
  * Usage:
  *   npx tsx scripts/create-schema.ts
@@ -274,8 +274,8 @@ async function executeStatements(statements: string[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log('Bible MCP Server — D1 Schema Creation');
-  console.log('======================================\n');
+  console.log('Bible Study App — D1 Schema Creation');
+  console.log('=====================================\n');
 
   const all: string[] = [];
 

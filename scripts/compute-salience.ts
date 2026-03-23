@@ -283,8 +283,8 @@ async function insertSalienceRows(rows: SalienceRow[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log('Bible MCP Server — Topic Book Salience ETL');
-  console.log('===========================================\n');
+  console.log('Bible Study App — Topic Book Salience ETL');
+  console.log('==========================================\n');
 
   const required = [
     'CLOUDFLARE_API_TOKEN',

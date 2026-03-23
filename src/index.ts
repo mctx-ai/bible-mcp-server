@@ -1,5 +1,5 @@
 /**
- * Bible Study MCP Server
+ * Bible Study App
  *
  * Built with @mctx-ai/mcp-server. Provides Bible text lookup, semantic search,
  * cross-references, word study, concordance, and topical discovery across 5
