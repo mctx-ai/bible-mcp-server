@@ -634,8 +634,8 @@ async function loadVerses(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log('Bible MCP Server — Bible Text ETL');
-  console.log('===================================\n');
+  console.log('Bible Study App — Bible Text ETL');
+  console.log('==================================\n');
 
   // Validate required environment variables
   const required = ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'D1_DATABASE_ID'];

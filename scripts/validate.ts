@@ -401,8 +401,8 @@ async function checkDataIntegrity(): Promise<void> {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.log('Bible MCP Server — Data Validation');
-  console.log('====================================');
+  console.log('Bible Study App — Data Validation');
+  console.log('===================================');
 
   try {
     await checkRowCounts();

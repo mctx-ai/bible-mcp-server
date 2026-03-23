@@ -1,5 +1,5 @@
 /**
- * Integration tests for the Bible MCP Server.
+ * Integration tests for the Bible Study App.
  *
  * These tests call live Cloudflare APIs (D1, Vectorize, Workers AI) and require
  * CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN environment variables to run.

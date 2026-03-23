@@ -629,8 +629,8 @@ async function fetchExistingVerses(): Promise<Set<string>> {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  console.log("Bible MCP Server — Nave's Topical Bible ETL");
-  console.log('============================================\n');
+  console.log("Bible Study App — Nave's Topical Bible ETL");
+  console.log('===========================================\n');
 
   // Validate required environment variables
   const required = [
